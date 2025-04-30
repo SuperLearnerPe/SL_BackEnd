@@ -35,8 +35,7 @@ SECRET_KEY = env('SECRET_KEY')
 DEBUG = env.bool('DEBUG', default=False)
 
 ALLOWED_HOSTS = [
-    'backend-as-sp-r4hbqw2mzq-uc.a.run.app',
-    'backend-as-sp-426148382897.us-central1.run.app',
+    'backend-superlearner-1083661745884.us-central1.run.app',  # Añadido el nuevo dominio de Cloud Run
     'localhost',
     '127.0.0.1',
     "0.0.0.0"
@@ -66,6 +65,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -76,6 +76,8 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = 'SuperLearner_Peru.urls'
+
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 TEMPLATES = [
     {
@@ -143,6 +145,12 @@ USE_I18N = True
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+# Directorios adicionales desde donde collectstatic buscará archivos
+STATICFILES_DIRS = [
+    # os.path.join(BASE_DIR, "static"), # Descomenta si tienes una carpeta 'static' en la raíz de tu proyecto
+]
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
@@ -165,14 +173,16 @@ CORS_ALLOWED_ORIGINS = [
     "https://backend-as-sp-r4hbqw2mzq-uc.a.run.app",
     "http://0.0.0.0:8000",
     "https://front-as-sl-426148382897.southamerica-west1.run.app",
-    "https://front-as-sl-r4hbqw2mzq-tl.a.run.app ",
-"https://8080-idx-front-as-sl-1726013195974.cluster-m7tpz3bmgjgoqrktlvd4ykrc2m.cloudworkstations.dev"
+    "https://front-as-sl-r4hbqw2mzq-tl.a.run.app",
+    "https://backend-superlearner-1083661745884.us-central1.run.app",  # Añadido el nuevo dominio
+    "https://8080-idx-front-as-sl-1726013195974.cluster-m7tpz3bmgjgoqrktlvd4ykrc2m.cloudworkstations.dev"
 ]
 
 CORS_ALLOW_CREDENTIALS = True 
 
 CSRF_TRUSTED_ORIGINS = [
     'https://backend-as-sp-426148382897.us-central1.run.app',
+    'https://backend-superlearner-1083661745884.us-central1.run.app',  # Añadido el nuevo dominio
 ]
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
