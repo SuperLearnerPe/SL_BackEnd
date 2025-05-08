@@ -1,6 +1,6 @@
 from rest_framework.viewsets import ViewSet
 from rest_framework.response import Response
-from .serializers import UserDataSerializer,UserSerializer, GetCourses ,GetStudentsClass ,CourseSerializer ,AttendanceUpdateSerializer , SessionSerializer 
+from .serializers import UserDataSerializer,UserSerializer, GetCourses ,GetStudentsClass ,CourseSerializer  , SessionSerializer 
 from django.contrib.auth.models import User
 from rest_framework.authtoken.models import Token
 from rest_framework import status
@@ -295,19 +295,21 @@ class StudentsViewset(ViewSet):
                     items=openapi.Schema(
                         type=openapi.TYPE_OBJECT,
                         properties={
-                            'id': openapi.Schema(type=openapi.TYPE_INTEGER, description="Attendance ID"),
-                            'status': openapi.Schema(
+                            'id': openapi.Schema(type=openapi.TYPE_INTEGER, description="Student ID"),
+                            'attendance': openapi.Schema(
                                 type=openapi.TYPE_STRING,
-                                enum=['ONTIME', 'LATE', 'FAIL'],
-                                description="Updated status for the attendance"
+                                enum=['PRESENT', 'TARDY', 'ABSENT', 'JUSTIFIED', ''],
+                                description="Updated attendance status"
                             ),
                         },
-                        required=['id', 'status'],
+                        required=['id', 'attendance'],
                     ),
                     description="List of attendances to update"
-                )
+                ),
+                'num_session': openapi.Schema(type=openapi.TYPE_INTEGER, description="Session number"),
+                'id_class': openapi.Schema(type=openapi.TYPE_INTEGER, description="Class ID")
             },
-            required=['attendances']
+            required=['attendances', 'num_session', 'id_class']
         ),
         responses={
             200: openapi.Response('Attendance statuses updated successfully'),
@@ -322,17 +324,24 @@ class StudentsViewset(ViewSet):
         if not isinstance(attendances_data, list):
             return Response({'error': 'Invalid data format. Expected a list of attendances.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Validamos los datos
-        serializer = AttendanceUpdateSerializer(data=attendances_data, many=True)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        # Validar los valores de asistencia
+        valid_attendance_values = ['PRESENT', 'TARDY', 'ABSENT', 'JUSTIFIED', '']
+        for item in attendances_data:
+            if 'attendance' not in item or item['attendance'] not in valid_attendance_values:
+                return Response(
+                    {'error': f'Valor de asistencia no válido. Valores permitidos: {", ".join(valid_attendance_values)}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
         session_number = request.data.get('num_session')
         class_id = request.data.get('id_class')
 
+        if not session_number or not class_id:
+            return Response({'error': 'Session number and class ID are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
         updated_attendances = []
 
-        for item in request.data.get('attendances', []):
+        for item in attendances_data:
             # Filtrar por el número de sesión (num_session) y la clase (id_class)
             attendances = AttendanceStudent.objects.filter(
                 id_student=item['id'],
@@ -349,40 +358,49 @@ class StudentsViewset(ViewSet):
             # Actualizar los registros modificados
             AttendanceStudent.objects.bulk_update(updated_attendances, ['attendance'])
 
-        return Response({'message': 'Attendance statuses updated successfully.'}, status=status.HTTP_200_OK)
+        return Response({
+            'message': 'Attendance statuses updated successfully.',
+            'attendance_legend': {
+                'PRESENT': 'Presente',
+                'TARDY': 'Tardanza',
+                'ABSENT': 'Falta',
+                'JUSTIFIED': 'Justificado',
+                '': 'No registrado'
+            }
+        }, status=status.HTTP_200_OK)
     
     @swagger_auto_schema(
-        operation_description="Creates a session for a class and registers attendance for all students.",
-        responses={
-            201: openapi.Response('Session created successfully and attendance recorded', SessionSerializer),
-            403: 'No permission to create sessions for this class or user is not a teacher',
-            400: 'Bad request'
+    operation_description="Creates a session for a class and registers attendance for all students with blank initial attendance.",
+    responses={
+        201: openapi.Response('Session created successfully and attendance recorded', SessionSerializer),
+        403: 'No permission to create sessions for this class or user is not a teacher',
+        400: 'Bad request'
+    },
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={
+            'id_class': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID of the class')
         },
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                'id_class': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID of the class')
-            },
-            required=['id_class']
-        ),
-        tags=['Students']
+        required=['id_class']
+    ),
+    tags=['Students']
     )
     @action(detail=False, methods=['POST'], url_path='create_session')
     def create_session(self, request, *args, **kwargs):
         try:
-            logged_in_user = request.user.id
+            logged_in_user = request.user
 
             # Consultar los roles del usuario
-            user_roles = AuthUserRoles.objects.filter(user_id=logged_in_user).select_related('role')
+            user_roles = AuthUserRoles.objects.filter(user=logged_in_user).select_related('role')
 
-            # Verificar si el usuario tiene el rol de admin o volunteer
+            # Verificar si el usuario tiene el rol de admin o profesor
             is_volunteer = user_roles.filter(role__name='Volunteers_Profesor').exists()
             is_admin = user_roles.filter(role__name='admin').exists()
 
             if not (is_volunteer or is_admin):
                 return Response({'error': 'No tienes permisos para realizar esta acción'}, status=status.HTTP_403_FORBIDDEN)
 
-            # Obtener la clase por su ID desde la solicitud
+            # Obtener la clase por su ID
             class_id = request.data.get('id_class')
             if not class_id:
                 return Response({'error': 'ID de la clase no proporcionado'}, status=status.HTTP_400_BAD_REQUEST)
@@ -392,12 +410,20 @@ class StudentsViewset(ViewSet):
             except Class.DoesNotExist:
                 return Response({'error': 'Clase no encontrada'}, status=status.HTTP_404_NOT_FOUND)
 
+            # Verificar si hay estudiantes asociados a esta clase ANTES de crear la sesión
+            student_count = Students.objects.filter(studentclass__id_class=course_class.id).count()
+            if student_count == 0:
+                return Response({
+                    'error': 'No hay estudiantes asociados a esta clase. No se puede crear una sesión.',
+                    'status': 'EMPTY_CLASS'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
             volunteer = None  # Inicializar voluntario como None
 
             if is_volunteer:
                 # Verificar si el usuario es un voluntario asociado a esta clase
                 try:
-                    volunteer = Volunteers.objects.get(user_id=logged_in_user)
+                    volunteer = Volunteers.objects.get(user=logged_in_user)
                 except Volunteers.DoesNotExist:
                     return Response({'error': 'El usuario no es un profesor'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -411,41 +437,63 @@ class StudentsViewset(ViewSet):
                     return Response({'error': 'No se encontraron voluntarios asociados a esta clase'}, status=status.HTTP_404_NOT_FOUND)
                 volunteer = volunteer_class.id_volunteer
 
-            # Obtener el último número de sesión para la clase dada
+            # Obtener el último número de sesión para la clase
             last_session = Session.objects.filter(id_class=course_class).order_by('-num_session').first()
             num_session = (last_session.num_session + 1) if last_session else 1
 
-            # Crear una nueva sesión asociada a la clase
-            session = Session.objects.create(
-                id_class=course_class,
-                num_session=num_session,
-                date=timezone.now(),
-            )
-
-            # Obtener todos los estudiantes asociados a la clase a través de la tabla intermedia
-            students = Students.objects.filter(studentclass__id_class=course_class.id)
-
-            # Registrar la asistencia de cada estudiante
-            for student in students:
-                AttendanceStudent.objects.create(
-                    id_student=student,
-                    id_volunteer=volunteer,
-                    id_session=session,
-                    created_date=timezone.now(),
-                    attendance=''  # Puedes cambiar este valor según sea necesario
+            # Usar transacción para garantizar atomicidad
+            with transaction.atomic():
+                # Crear una nueva sesión
+                session = Session.objects.create(
+                    id_class=course_class,
+                    num_session=num_session,
+                    date=timezone.now(),
                 )
 
-            # Serializar la nueva sesión creada
-            serializer = SessionSerializer(session)
+                # Obtener estudiantes asociados a la clase
+                students = Students.objects.filter(studentclass__id_class=course_class.id)
+                
+                # Crear registros de asistencia para cada estudiante (con asistencia en blanco)
+                attendance_records = []
+                failed_students = []
+                
+                for student in students:
+                    try:
+                        attendance_records.append(
+                            AttendanceStudent(
+                                id_student=student,
+                                id_volunteer=volunteer,
+                                id_session=session,
+                                created_date=timezone.now(),
+                                attendance=""  
+                            )
+                        )
+                    except Exception as e:
+                        failed_students.append({"id": student.id, "error": str(e)})
+                
+                # Guardar todas las asistencias en batch para mejor rendimiento
+                if attendance_records:
+                    AttendanceStudent.objects.bulk_create(attendance_records)
 
-            return Response({
-                'message': 'Sesión creada con éxito y asistencia registrada',
-                'session': serializer.data
-            }, status=status.HTTP_201_CREATED)
+                # Serializar la sesión creada
+                serializer = SessionSerializer(session)
+                
+                response_data = {
+                    'message': 'Sesión creada con éxito y asistencia registrada en blanco',
+                    'session': serializer.data,
+                    'student_count': student_count
+
+                }
+                
+                # Incluir información sobre errores si los hay
+                if failed_students:
+                    response_data['warning'] = 'Algunos estudiantes no pudieron ser registrados'
+                    response_data['failed_students'] = failed_students
+
+                return Response(response_data, status=status.HTTP_201_CREATED)
 
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
 
     @swagger_auto_schema(
         operation_description="Get list of students filtered by session ID and class ID",
@@ -470,22 +518,26 @@ class StudentsViewset(ViewSet):
     )
     @action(detail=False, methods=['GET'], url_path='getStudents_by_session_class')
     def get_students_by_session_class(self, request):
-        
         # Obtener el session_class y class_id desde los parámetros de la consulta
-        session_class = request.query_params.get('session_class', None)
+        session_id = request.query_params.get('session_class', None)
         class_id = request.query_params.get('class_id', None)
 
-        if not session_class:
+        if not session_id:
             return Response({"detail": "El ID de la sesión es requerido."}, status=status.HTTP_400_BAD_REQUEST)
 
         if not class_id:
             return Response({"detail": "El ID de la clase es requerido."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Verificar si la sesión pertenece a la clase solicitada
+        # Verificar si la sesión existe usando el id_session directamente
         try:
-            session = Session.objects.get(num_session=session_class, id_class=class_id)
+            # Intenta primero con el id_session
+            session = Session.objects.get(id_session=session_id, id_class=class_id)
         except Session.DoesNotExist:
-            return Response({"detail": "Sesión no encontrada para esta clase."}, status=status.HTTP_404_NOT_FOUND)
+            try:
+                # Si no funciona, intentar con num_session 
+                session = Session.objects.get(num_session=session_id, id_class=class_id)
+            except Session.DoesNotExist:
+                return Response({"detail": "Sesión no encontrada para esta clase."}, status=status.HTTP_404_NOT_FOUND)
 
         # Obtener los registros de asistencia filtrados por la sesión
         attendance_records = AttendanceStudent.objects.filter(
@@ -493,7 +545,7 @@ class StudentsViewset(ViewSet):
         )
 
         if not attendance_records.exists():
-            return Response({"detail": "Estudiantes no encontrados para esta sesión y clase."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"detail": "No se encontraron registros de asistencia para esta sesión y clase."}, status=status.HTTP_404_NOT_FOUND)
 
         # Obtener los IDs de los estudiantes asociados a esos registros de asistencia
         student_ids = attendance_records.values_list('id_student', flat=True)
@@ -504,9 +556,40 @@ class StudentsViewset(ViewSet):
         if not students.exists():
             return Response({"detail": "Estudiantes no encontrados."}, status=status.HTTP_404_NOT_FOUND)
 
-        # Serializar los resultados
-        serializer = GetStudentsClass(students, many=True, context={'session_id': session.id_session})
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        # Obtener la información del curso
+        course = Class.objects.get(id=class_id)
+
+        # Crear la lista de estudiantes con los campos específicos
+        student_list = []
+        for student in students:
+            # Buscar el registro de asistencia para este estudiante
+            try:
+                attendance_record = AttendanceStudent.objects.get(
+                    id_student=student.id,
+                    id_session=session.id_session
+                )
+                attendance_value = attendance_record.attendance
+            except AttendanceStudent.DoesNotExist:
+                attendance_value = ""
+
+            # Crear nombre completo
+            nombre_completo = f"{student.name} {student.last_name}"
+
+            student_list.append({
+                "id": student.id,
+                "nombre_completo": nombre_completo,
+                "curso": course.name,
+                "sesion": session.num_session,
+                "fecha_nacimiento": student.birthdate,
+                "asistencia": attendance_value
+            })
+
+        # Respuesta con la información requerida
+        response_data = {
+            "students": student_list
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
 
     @swagger_auto_schema(
     operation_description="Get list of sessions filtered by class ID",

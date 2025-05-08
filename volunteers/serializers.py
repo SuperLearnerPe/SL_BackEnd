@@ -1,5 +1,7 @@
 from rest_framework import serializers
-from api.models import Volunteers , AuthUser , AuthUserRoles, VolunteerClass
+from api.models import Volunteers, AuthUser, AuthUserRoles, VolunteerClass
+from django.contrib.auth import get_user_model
+User = get_user_model()
 
 class GetVolunteersSerializer(serializers.ModelSerializer):
     role = serializers.SerializerMethodField()
@@ -11,13 +13,21 @@ class GetVolunteersSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'last_name', 'email', 'personal_email', 'phone', 'photo', 'nationality', 'document_type', 'document_id', 'birthdate', 'gender', 'status', 'created_at', 'updated_at', 'user', 'role', 'course_ids']  # Incluimos 'courses' en los campos
     
     def get_role(self, obj):
-        # Obtener la instancia correspondiente de AuthUser a través de user_id en Volunteers
-        auth_user = AuthUser.objects.get(id=obj.user_id)
-        # Consultar el modelo AuthUserRoles usando el user (auth_user)
-        user_role = AuthUserRoles.objects.filter(user=auth_user.id).first()
-        if user_role:
-            return user_role.role.id  # Devolver el ID del rol
-        return None  # Devolver None si no se encuentra rol
+        try:
+            # Primero obtenemos el objeto AuthUser
+            auth_user = AuthUser.objects.get(id=obj.user_id)
+            
+            # Buscamos el rol directamente por user_id en lugar del objeto
+            # Esto evita el error de tipos incompatibles
+            user_role = AuthUserRoles.objects.filter(user_id=auth_user.id).first()
+            
+            if user_role:
+                return user_role.role.id  # Devolver el ID del rol
+            return None  # Devolver None si no se encuentra rol
+            
+        except Exception :
+            # Silenciar la excepción para no mostrar errores en la consola
+            return None  # En caso de error, devolver None
 
     def get_email(self, obj):
         auth_user = AuthUser.objects.filter(id=obj.user_id).first()
@@ -44,4 +54,3 @@ class VolunteerSerializer(serializers.ModelSerializer):
         model = Volunteers
         fields = ['name', 'last_name', 'personal_email', 'photo', 'phone', 'nationality', 'document_type', 'document_id', 'birthdate', 'gender', 'status', 'user']
 
-        

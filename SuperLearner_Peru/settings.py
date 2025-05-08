@@ -147,9 +147,8 @@ USE_I18N = True
 STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
-# Directorios adicionales desde donde collectstatic buscará archivos
 STATICFILES_DIRS = [
-    # os.path.join(BASE_DIR, "static"), # Descomenta si tienes una carpeta 'static' en la raíz de tu proyecto
+
 ]
 
 # Default primary key field type
@@ -159,7 +158,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost",
     "http://localhost:8000",
     "http://localhost:8080",
     "http://127.0.0.1:5501",  
@@ -169,26 +167,23 @@ CORS_ALLOWED_ORIGINS = [
     "http://192.168.56.1:3000",
     "http://192.168.0.103:3000",
     "http://172.22.0.1:3000",
-    "https://frontprueba-ybvt.onrender.com",
-    "https://backend-as-sp-r4hbqw2mzq-uc.a.run.app",
     "http://0.0.0.0:8000",
-    "https://front-as-sl-426148382897.southamerica-west1.run.app",
-    "https://front-as-sl-r4hbqw2mzq-tl.a.run.app",
-    "https://backend-superlearner-1083661745884.us-central1.run.app",  # Añadido el nuevo dominio
-    "https://8080-idx-front-as-sl-1726013195974.cluster-m7tpz3bmgjgoqrktlvd4ykrc2m.cloudworkstations.dev"
+    "https://backend-superlearner-1083661745884.us-central1.run.app",  
+    "https://front-as-sl-1083661745884.southamerica-west1.run.app",  
+
 ]
 
 CORS_ALLOW_CREDENTIALS = True 
 
 CSRF_TRUSTED_ORIGINS = [
-    'https://backend-as-sp-426148382897.us-central1.run.app',
-    'https://backend-superlearner-1083661745884.us-central1.run.app',  # Añadido el nuevo dominio
+    'https://front-as-sl-1083661745884.southamerica-west1.run.app', 
+    'https://backend-superlearner-1083661745884.us-central1.run.app'
 ]
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = env('EMAIL_HOST_USER')  # Coloca tu correo aquí en el archivo .env
-EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD')  # Coloca tu contraseña en el archivo .env
+EMAIL_HOST_USER = env('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD')
 EMAIL_FAIL_SILENTLY = False

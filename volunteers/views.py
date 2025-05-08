@@ -113,12 +113,12 @@ class VolunteersViewSet(ViewSet):
         volunteer_id = request.data.get('volunteer_id')
         user_id = request.data.get('user_id')
         user_data = request.data.get('user')
-        volunteer_data = request.data.get('volunteer')
+        volunteer_data = request.data.get('volunteer', {})
         course_ids = request.data.get('course_ids', []) 
 
         # Validar que los IDs y los datos estén presentes
-        if not volunteer_id or not user_id or not user_data or not volunteer_data:
-            return Response({"error": "Se requiere el id del usuario, id del voluntario, y la información de ambos."}, status=status.HTTP_400_BAD_REQUEST)
+        if not volunteer_id or not user_id or not user_data:
+            return Response({"error": "Se requiere el id del usuario, id del voluntario, y la información del usuario."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             # Obtener el voluntario basado en el `volunteer_id`
@@ -132,6 +132,14 @@ class VolunteersViewSet(ViewSet):
         except AuthUser.DoesNotExist:
             return Response({"error": "El usuario no existe."}, status=status.HTTP_404_NOT_FOUND)
 
+        # Actualizar el email del usuario si se proporciona en user_data
+        if 'email' in user_data:
+            # Verificar que el nuevo email no esté ya en uso por otro usuario
+            if AuthUser.objects.filter(email=user_data['email']).exclude(id=user_id).exists():
+                return Response({"error": "El email ya está en uso por otro usuario."}, status=status.HTTP_400_BAD_REQUEST)
+            user.email = user_data['email']
+            user.save(update_fields=['email'])
+
         # Serializar los datos del usuario para actualizarlos
         user_serializer = UserAuthSerializer(user, data=user_data, partial=True)  # Partial permite actualizar campos individuales
         if not user_serializer.is_valid():
@@ -144,43 +152,65 @@ class VolunteersViewSet(ViewSet):
         # Actualizar los datos del usuario
         user_serializer.save()
 
-        # Serializar los datos del voluntario para actualizarlos
-        volunteer_serializer = VolunteerSerializer(volunteer, data=volunteer_data, partial=True)
-        if not volunteer_serializer.is_valid():
-            return Response(volunteer_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        # Extraer role_id antes de la serialización
+        role_id = None
+        if volunteer_data and 'role' in volunteer_data:
+            role_id = volunteer_data.pop('role', None)
 
-        volunteer_serializer.save()
+        # Serializar los datos del voluntario para actualizarlos (si hay datos)
+        if volunteer_data:
+            volunteer_serializer = VolunteerSerializer(volunteer, data=volunteer_data, partial=True)
+            if not volunteer_serializer.is_valid():
+                return Response(volunteer_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            volunteer_serializer.save()
+        else:
+            # Si no hay datos de voluntario, inicializar el serializador con los datos actuales
+            volunteer_serializer = VolunteerSerializer(volunteer)
         
-        role_id = volunteer_data.pop('role', None)
-        print(role_id)
-        
+        # Procesar el rol si se proporcionó
         if role_id is not None:
             try:
+                # Asegurarse de que role_id sea un entero
+                role_id = int(role_id)
                 auth_role = AuthRole.objects.get(id=role_id)
                 # Crea o actualiza el rol del usuario en AuthUserRoles
                 AuthUserRoles.objects.update_or_create(user=user, defaults={'role': auth_role})
+            except (ValueError, TypeError):
+                return Response({"error": "El ID del rol debe ser un número entero válido."}, status=status.HTTP_400_BAD_REQUEST)
             except AuthRole.DoesNotExist:
                 return Response({"error": f"El rol con id {role_id} no existe."}, status=status.HTTP_400_BAD_REQUEST)
         
         # Si el rol es Profesor (2), se actualizan o crean las relaciones con cursos
         if role_id == 2:
             if course_ids:
-                VolunteerClass.objects.filter(id_volunteer=volunteer).delete()
-                for course_id in course_ids:
-                    try:
-                        class_instance = Class.objects.get(id=course_id)
-                        VolunteerClass.objects.create(id_class=class_instance, id_volunteer=volunteer)
-                    except Class.DoesNotExist:
-                        return Response(
-                            {"error": f"Curso con ID {course_id} no existe."},
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
+                try:
+                    # Limpiar las relaciones existentes
+                    VolunteerClass.objects.filter(id_volunteer=volunteer).delete()
+                    
+                    # Crear nuevas relaciones
+                    for course_id in course_ids:
+                        try:
+                            class_instance = Class.objects.get(id=course_id)
+                            VolunteerClass.objects.create(id_class=class_instance, id_volunteer=volunteer)
+                        except Class.DoesNotExist:
+                            return Response(
+                                {"error": f"Curso con ID {course_id} no existe."},
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
+                except Exception as e:
+                    return Response({"error": f"Error al actualizar los cursos: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         else:
             # Si es Admin u otro rol distinto de Profesor, se eliminan las relaciones con cursos
-            VolunteerClass.objects.filter(id_volunteer=volunteer).delete()
+            try:
+                VolunteerClass.objects.filter(id_volunteer=volunteer).delete()
+            except Exception as e:
+                return Response({"error": f"Error al eliminar las relaciones de curso: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+        # Obtener el email actualizado para la respuesta
+        updated_user = AuthUser.objects.get(id=user_id)
+        
         return Response({
-            'user': user_serializer.data,
+            'user': UserAuthSerializer(updated_user).data,
             'volunteer': volunteer_serializer.data 
         }, status=status.HTTP_200_OK)
         

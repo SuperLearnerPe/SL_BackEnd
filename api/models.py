@@ -299,4 +299,3 @@ class AuthUserRoles(models.Model):
     class Meta:
         managed = False  # Indica que Django no manejará la creación de la tabla
         db_table = 'auth_user_roles'  # Nombre de la tabla
-
