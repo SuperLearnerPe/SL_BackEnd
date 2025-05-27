@@ -15,23 +15,130 @@ from .models import Students , Class ,AttendanceStudent ,Session ,Volunteers ,Vo
 from django.core.mail import send_mail
 from django.db import transaction
 
+# Esquemas reutilizables para Swagger
+def get_auth_header():
+    """
+    DEPRECATED: Ya no se usa en los endpoints individuales.
+    La autenticación ahora es global usando el botón 'Authorize' en Swagger.
+    """
+    return openapi.Parameter(
+        'Authorization',
+        openapi.IN_HEADER,
+        description="Token de autenticación en formato: 'Token <token_value>'",
+        type=openapi.TYPE_STRING,
+        required=False  # Cambiado a False porque ahora es global
+    )
+
+# Respuestas comunes para Swagger
+COMMON_RESPONSES = {
+    400: openapi.Response(
+        description="Solicitud incorrecta",
+        examples={
+            "application/json": {
+                "error": "Datos de entrada inválidos"
+            }
+        }
+    ),
+    401: openapi.Response(
+        description="No autorizado",
+        examples={
+            "application/json": {
+                "detail": "Las credenciales de autenticación no se proporcionaron."
+            }
+        }
+    ),
+    403: openapi.Response(
+        description="Acceso prohibido",
+        examples={
+            "application/json": {
+                "error": "No tienes permisos para realizar esta acción"
+            }
+        }
+    ),
+    404: openapi.Response(
+        description="No encontrado",
+        examples={
+            "application/json": {
+                "detail": "Recurso no encontrado"
+            }
+        }
+    ),
+    500: openapi.Response(
+        description="Error interno del servidor",
+        examples={
+            "application/json": {
+                "detail": "Error interno del servidor"
+            }
+        }
+    )
+}
+
 class UserViewSet(ViewSet):
     
     authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = []  # Se configura por método individual
     
     @swagger_auto_schema(
-        operation_description="User login",
+        operation_summary="Login de usuario",
+        operation_description="Autenticar usuario con email y password. Devuelve token de autenticación.",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=['email', 'password'],
             properties={
-                'email': openapi.Schema(type=openapi.TYPE_STRING, description='User email'),
-                'password': openapi.Schema(type=openapi.TYPE_STRING, description='User password'),
+                'email': openapi.Schema(
+                    type=openapi.TYPE_STRING, 
+                    description='Email del usuario',
+                    example='usuario@ejemplo.com'
+                ),
+                'password': openapi.Schema(
+                    type=openapi.TYPE_STRING, 
+                    description='Contraseña del usuario',
+                    example='miPassword123'
+                ),
             },
         ),
-        responses={200: openapi.Response('OK', UserSerializer)},
-        tags=["User Management"]
+        responses={
+            200: openapi.Response(
+                description='Login exitoso',
+                examples={
+                    "application/json": {
+                        "token": "9944b09199c62bcf9418ad846dd0e4bbdfc6ee4b",
+                        "user": {
+                            "id": 1,
+                            "email": "usuario@ejemplo.com",
+                            "all_permissions": [],
+                            "groups": [],
+                            "role": 1
+                        }
+                    }
+                }
+            ),
+            400: openapi.Response(
+                description='Datos incorrectos',
+                examples={
+                    "application/json": {
+                        "error": "Email is required"
+                    }
+                }
+            ),
+            403: openapi.Response(
+                description='Cuenta inactiva',
+                examples={
+                    "application/json": {
+                        "error": "This account is inactive."
+                    }
+                }
+            ),
+            404: openapi.Response(
+                description='Usuario no encontrado',
+                examples={
+                    "application/json": {
+                        "error": "User not found"
+                    }
+                }
+            )
+        },
+        tags=["🔐 Autenticación"]
     )
     @action(detail=False, methods=['POST'], permission_classes=[])
     def login(self, request):
@@ -79,17 +186,44 @@ class UserViewSet(ViewSet):
             return Response({"error": f"An unexpected error occurred: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @swagger_auto_schema(
-        operation_description="User registration",
+        operation_summary="Registro de usuario",
+        operation_description="Crear una nueva cuenta de usuario",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=['email', 'password'],
             properties={
-                'email': openapi.Schema(type=openapi.TYPE_STRING, description='User email'),
-                'password': openapi.Schema(type=openapi.TYPE_STRING, description='User password'),
+                'email': openapi.Schema(
+                    type=openapi.TYPE_STRING, 
+                    description='Email del usuario',
+                    example='nuevo@ejemplo.com'
+                ),
+                'password': openapi.Schema(
+                    type=openapi.TYPE_STRING, 
+                    description='Contraseña del usuario',
+                    example='password123'
+                ),
             },
         ),
-        responses={201: openapi.Response('Created', UserSerializer)},
-        tags=["User Management"]
+        responses={
+            201: openapi.Response(
+                description='Usuario creado exitosamente',
+                examples={
+                    "application/json": {
+                        "token": "9944b09199c62bcf9418ad846dd0e4bbdfc6ee4b",
+                        "user": {
+                            "id": 2,
+                            "email": "nuevo@ejemplo.com",
+                            "all_permissions": [],
+                            "groups": [],
+                            "role": None
+                        }
+                    }
+                }
+            ),
+            400: COMMON_RESPONSES[400],
+            500: COMMON_RESPONSES[500]
+        },
+        tags=["🔐 Autenticación"]
     )
     @action(detail=False, methods=['POST'], permission_classes=[])
     def register(self, request):
@@ -108,15 +242,72 @@ class UserViewSet(ViewSet):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
-        operation_description="Get user profile",
-        responses={200: openapi.Response('OK', UserSerializer)},
-        tags=["User Management"]
+        operation_summary="Perfil del usuario",
+        operation_description="Obtener información del perfil del usuario autenticado",
+        security=[{'Token': []}],
+        responses={
+            200: openapi.Response(
+                description='Perfil obtenido exitosamente',
+                schema=UserSerializer,
+                examples={
+                    "application/json": {
+                        "id": 1,
+                        "email": "usuario@ejemplo.com",
+                        "all_permissions": [],
+                        "groups": [],
+                        "role": 1
+                    }
+                }
+            ),
+            401: COMMON_RESPONSES[401],
+            403: COMMON_RESPONSES[403]
+        },
+        tags=["👤 Usuario"]
     )
     @action(detail=False, methods=['GET'])
     def profile(self, request):
         serializer = UserSerializer(instance=request.user)
         return Response(serializer.data, status=status.HTTP_200_OK)
     
+    @swagger_auto_schema(
+        operation_summary="Datos del usuario",
+        operation_description="Obtener información detallada del usuario (voluntario)",
+        security=[{'Token': []}],
+        manual_parameters=[
+            openapi.Parameter(
+                'id_user',
+                openapi.IN_QUERY,
+                description="ID del usuario a consultar",
+                type=openapi.TYPE_INTEGER,
+                required=True,
+                example=1
+            )
+        ],
+        responses={
+            200: openapi.Response(
+                description='Datos del usuario obtenidos exitosamente',
+                schema=UserDataSerializer(many=True),
+                examples={
+                    "application/json": [
+                        {
+                            "id": 1,
+                            "name": "Juan",
+                            "last_name": "Pérez",
+                            "personal_email": "juan@gmail.com",
+                            "photo": None,
+                            "phone": "+51987654321",
+                            "user_id": 1,
+                            "email": "juan@superlearner.com"
+                        }
+                    ]
+                }
+            ),
+            400: COMMON_RESPONSES[400],
+            404: COMMON_RESPONSES[404],
+            500: COMMON_RESPONSES[500]
+        },
+        tags=["👤 Usuario"]
+    )
     @action(detail=False, methods=['GET'])
     def Data_user(self, request):
         id_user = request.query_params.get('id_user')  # Utiliza query_params para GET requests
@@ -142,9 +333,52 @@ class ClassViewSset(ViewSet):
     permission_classes = [IsAuthenticated]
     
     @swagger_auto_schema(
-        operation_description="Get list of courses",
-        responses={200: openapi.Response('OK', GetCourses)},
-        tags=["Courses"]
+        operation_summary="Obtener cursos",
+        operation_description="Obtener lista de cursos. Si el usuario es coordinador, retorna todos los cursos. Si es profesor, retorna solo los cursos asignados.",
+        security=[{'Token': []}],
+        manual_parameters=[
+            openapi.Parameter(
+                'user_id',
+                openapi.IN_QUERY,
+                description="ID del usuario",
+                type=openapi.TYPE_INTEGER,
+                required=True,
+                example=1
+            ),
+            openapi.Parameter(
+                'role_id',
+                openapi.IN_QUERY,
+                description="ID del rol del usuario (1=Coordinador, 2=Profesor)",
+                type=openapi.TYPE_STRING,
+                required=True,
+                example="2"
+            )
+        ],
+        responses={
+            200: openapi.Response(
+                description='Lista de cursos obtenida exitosamente',
+                schema=GetCourses(many=True),
+                examples={
+                    "application/json": [
+                        {
+                            "id": 1,
+                            "category": "Inglés",
+                            "name": "Inglés Básico",
+                            "day": "Lunes",
+                            "start_time": "09:00:00",
+                            "end_time": "11:00:00",
+                            "color": "#FF5733",
+                            "status": 1,
+                            "created_at": "2024-01-01T10:00:00Z",
+                            "updated_at": "2024-01-01T10:00:00Z"
+                        }
+                    ]
+                }
+            ),
+            400: COMMON_RESPONSES[400],
+            500: COMMON_RESPONSES[500]
+        },
+        tags=["📚 Cursos"]
     )
     @action(detail=False, methods=['GET'], url_path='get_courses', permission_classes=[IsAuthenticated])
     def get_schedules(self, request):
@@ -184,18 +418,43 @@ class ClassViewSset(ViewSet):
         return Response(course_serializer.data, status=status.HTTP_200_OK)
 
     @swagger_auto_schema(
-        operation_description="Get list of students filtered by class ID",
+        operation_summary="Obtener curso por ID",
+        operation_description="Obtener información detallada de un curso específico por su ID",
+        security=[{'Token': []}],
         manual_parameters=[
             openapi.Parameter(
                 'course_id',
                 openapi.IN_QUERY,
-                description="ID of the class to filter students",
+                description="ID del curso a consultar",
                 type=openapi.TYPE_INTEGER,
-                required=True
+                required=True,
+                example=1
             )
         ],
-        responses={200: openapi.Response('OK', GetStudentsClass(many=True))},
-        tags=["Courses"]
+        responses={
+            200: openapi.Response(
+                description='Curso obtenido exitosamente',
+                schema=CourseSerializer,
+                examples={
+                    "application/json": {
+                        "id": 1,
+                        "category": "Inglés",
+                        "name": "Inglés Básico",
+                        "day": "Lunes",
+                        "start_time": "09:00:00",
+                        "end_time": "11:00:00",
+                        "color": "#FF5733",
+                        "status": 1,
+                        "created_at": "2024-01-01T10:00:00Z",
+                        "updated_at": "2024-01-01T10:00:00Z"
+                    }
+                }
+            ),
+            400: COMMON_RESPONSES[400],
+            404: COMMON_RESPONSES[404],
+            500: COMMON_RESPONSES[500]
+        },
+        tags=["📚 Cursos"]
     )
     @action(detail=False, methods=['GET'], url_path='get_Courses_id')
     def get_schedules_id(self, request):
@@ -208,6 +467,41 @@ class ClassViewSset(ViewSet):
         return Response(serializer.data, status=status.HTTP_200_OK) 
     
     
+    @swagger_auto_schema(
+        operation_summary="Actualizar color del curso",
+        operation_description="Actualizar el color de un curso específico",
+        security=[{'Token': []}],
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['class_id', 'color'],
+            properties={
+                'class_id': openapi.Schema(
+                    type=openapi.TYPE_INTEGER,
+                    description='ID del curso',
+                    example=1
+                ),
+                'color': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Nuevo color en formato hexadecimal',
+                    example='#FF5733'
+                ),
+            },
+        ),
+        responses={
+            200: openapi.Response(
+                description='Color actualizado exitosamente',
+                examples={
+                    "application/json": {
+                        "detail": "Color updated successfully."
+                    }
+                }
+            ),
+            400: COMMON_RESPONSES[400],
+            404: COMMON_RESPONSES[404],
+            500: COMMON_RESPONSES[500]
+        },
+        tags=["📚 Cursos"]
+    )
     @action(detail=False, methods=['POST'], url_path='update_color')
     def update_color(self, request):
         class_id = request.data.get('class_id')
@@ -237,9 +531,18 @@ class StudentsViewset(ViewSet):
     permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
-        operation_description="Get Students",
-        responses={200: openapi.Response('OK', GetStudentsClass(many=True))},
-        tags=["Students"]
+        operation_summary="Obtener todos los estudiantes",
+        operation_description="Obtener lista completa de estudiantes registrados",
+        security=[{'Token': []}],
+        responses={
+            200: openapi.Response(
+                description='Lista de estudiantes obtenida exitosamente',
+                schema=GetStudentsClass(many=True)
+            ),
+            401: COMMON_RESPONSES[401],
+            403: COMMON_RESPONSES[403]
+        },
+        tags=["👥 Estudiantes"]
     )
     @action(detail=False, methods=['GET'], url_path='getStudents')
     def get_students(self, request):
@@ -247,20 +550,30 @@ class StudentsViewset(ViewSet):
         serializer = GetStudentsClass(course,many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-    #acuerdate desaparecerme
     @swagger_auto_schema(
-        operation_description="Get list of students filtered by course ID",
+        operation_summary="Obtener estudiantes por clase",
+        operation_description="Obtener lista de estudiantes filtrados por ID de clase",
+        security=[{'Token': []}],
         manual_parameters=[
             openapi.Parameter(
                 'class_id',
                 openapi.IN_QUERY,
-                description="ID of the course to filter students",
+                description="ID de la clase para filtrar estudiantes",
                 type=openapi.TYPE_INTEGER,
-                required=True
+                required=True,
+                example=1
             )
         ],
-        responses={200: openapi.Response('OK', GetStudentsClass(many=True))},
-        tags=["Students"]
+        responses={
+            200: openapi.Response(
+                description='Estudiantes de la clase obtenidos exitosamente',
+                schema=GetStudentsClass(many=True)
+            ),
+            400: COMMON_RESPONSES[400],
+            404: COMMON_RESPONSES[404],
+            500: COMMON_RESPONSES[500]
+        },
+        tags=["👥 Estudiantes"]
     )
     @action(detail=False, methods=['GET'], url_path='getStudents_id')
     def get_students_id(self, request):
@@ -286,36 +599,67 @@ class StudentsViewset(ViewSet):
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @swagger_auto_schema(
-        operation_description="Update attendance statuses for multiple students",
+        operation_summary="Actualizar estado de asistencia",
+        operation_description="Actualizar el estado de asistencia para múltiples estudiantes en una sesión específica",
+        security=[{'Token': []}],
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
+            required=['attendances', 'num_session', 'id_class'],
             properties={
                 'attendances': openapi.Schema(
                     type=openapi.TYPE_ARRAY,
+                    description="Lista de asistencias a actualizar",
                     items=openapi.Schema(
                         type=openapi.TYPE_OBJECT,
+                        required=['id', 'attendance'],
                         properties={
-                            'id': openapi.Schema(type=openapi.TYPE_INTEGER, description="Student ID"),
+                            'id': openapi.Schema(
+                                type=openapi.TYPE_INTEGER,
+                                description="ID del estudiante",
+                                example=127
+                            ),
                             'attendance': openapi.Schema(
                                 type=openapi.TYPE_STRING,
                                 enum=['PRESENT', 'TARDY', 'ABSENT', 'JUSTIFIED', ''],
-                                description="Updated attendance status"
+                                description="Estado de asistencia (PRESENT=Presente, TARDY=Tardanza, ABSENT=Falta, JUSTIFIED=Justificado, ''=No registrado)",
+                                example="PRESENT"
                             ),
                         },
-                        required=['id', 'attendance'],
-                    ),
-                    description="List of attendances to update"
+                    )
                 ),
-                'num_session': openapi.Schema(type=openapi.TYPE_INTEGER, description="Session number"),
-                'id_class': openapi.Schema(type=openapi.TYPE_INTEGER, description="Class ID")
+                'num_session': openapi.Schema(
+                    type=openapi.TYPE_INTEGER,
+                    description="Número de sesión",
+                    example=1
+                ),
+                'id_class': openapi.Schema(
+                    type=openapi.TYPE_INTEGER,
+                    description="ID de la clase",
+                    example=1
+                )
             },
-            required=['attendances', 'num_session', 'id_class']
         ),
         responses={
-            200: openapi.Response('Attendance statuses updated successfully'),
-            400: openapi.Response('Invalid input data')
+            200: openapi.Response(
+                description='Estados de asistencia actualizados exitosamente',
+                examples={
+                    "application/json": {
+                        "message": "Attendance statuses updated successfully.",
+                    }
+                }
+            ),
+            400: openapi.Response(
+                description='Datos de entrada inválidos',
+                examples={
+                    "application/json": {
+                        "error": "Valor de asistencia no válido. Valores permitidos: PRESENT, TARDY, ABSENT, JUSTIFIED, "
+                    }
+                }
+            ),
+            401: COMMON_RESPONSES[401],
+            403: COMMON_RESPONSES[403]
         },
-        tags=["Students"]
+        tags=["👥 Estudiantes"]
     )
     @action(detail=False, methods=['PUT'], url_path='update_statuses_students')
     def update_attendance_statuses(self, request):
@@ -370,20 +714,50 @@ class StudentsViewset(ViewSet):
         }, status=status.HTTP_200_OK)
     
     @swagger_auto_schema(
-    operation_description="Creates a session for a class and registers attendance for all students with blank initial attendance.",
-    responses={
-        201: openapi.Response('Session created successfully and attendance recorded', SessionSerializer),
-        403: 'No permission to create sessions for this class or user is not a teacher',
-        400: 'Bad request'
-    },
-    request_body=openapi.Schema(
-        type=openapi.TYPE_OBJECT,
-        properties={
-            'id_class': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID of the class')
+        operation_summary="Crear nueva sesión",
+        operation_description="Crear una nueva sesión para una clase. Los estudiantes se registran automáticamente con asistencia en blanco.",
+        security=[{'Token': []}],
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['id_class'],
+            properties={
+                'id_class': openapi.Schema(
+                    type=openapi.TYPE_INTEGER,
+                    description='ID de la clase',
+                    example=1
+                )
+            },
+        ),
+        responses={
+            201: openapi.Response(
+                description='Sesión creada exitosamente',
+                examples={
+                    "application/json": {
+                        "message": "Sesión creada con éxito y asistencia registrada en blanco",
+                        "session": {
+                            "id_session": 4,
+                            "id_class": 1,
+                            "num_session": 2,
+                            "date": "2025-05-08T04:15:30Z"
+                        },
+                        "student_count": 15
+                    }
+                }
+            ),
+            400: openapi.Response(
+                description='Error en la solicitud',
+                examples={
+                    "application/json": {
+                        "error": "No hay estudiantes asociados a esta clase. No se puede crear una sesión.",
+                        "status": "EMPTY_CLASS"
+                    }
+                }
+            ),
+            401: COMMON_RESPONSES[401],
+            403: COMMON_RESPONSES[403],
+            404: COMMON_RESPONSES[404]
         },
-        required=['id_class']
-    ),
-    tags=['Students']
+        tags=["👥 Estudiantes"]
     )
     @action(detail=False, methods=['POST'], url_path='create_session')
     def create_session(self, request, *args, **kwargs):
@@ -496,25 +870,50 @@ class StudentsViewset(ViewSet):
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
-        operation_description="Get list of students filtered by session ID and class ID",
+        operation_summary="Obtener estudiantes por sesión y clase",
+        operation_description="Obtener lista de estudiantes con su asistencia filtrados por ID de sesión e ID de clase",
+        security=[{'Token': []}],
         manual_parameters=[
             openapi.Parameter(
                 'session_class',
                 openapi.IN_QUERY,
-                description="ID of the session to filter students",
+                description="ID de la sesión a consultar",
                 type=openapi.TYPE_INTEGER,
-                required=True
+                required=True,
+                example=1
             ),
             openapi.Parameter(
                 'class_id',
                 openapi.IN_QUERY,
-                description="ID of the class to filter students",
+                description="ID de la clase a consultar",
                 type=openapi.TYPE_INTEGER,
-                required=True
+                required=True,
+                example=1
             )
         ],
-        responses={200: openapi.Response('OK', GetStudentsClass(many=True))},
-        tags=["Students"]
+        responses={
+            200: openapi.Response(
+                description='Estudiantes obtenidos exitosamente',
+                examples={
+                    "application/json": {
+                        "students": [
+                            {
+                                "id": 127,
+                                "nombre_completo": "Juan Pérez",
+                                "curso": "Inglés 5 - 7",
+                                "sesion": 1,
+                                "fecha_nacimiento": "2010-05-15",
+                                "asistencia": "PRESENT"
+                            }
+                        ]
+                    }
+                }
+            ),
+            400: COMMON_RESPONSES[400],
+            404: COMMON_RESPONSES[404],
+            500: COMMON_RESPONSES[500]
+        },
+        tags=["👥 Estudiantes"]
     )
     @action(detail=False, methods=['GET'], url_path='getStudents_by_session_class')
     def get_students_by_session_class(self, request):
@@ -592,55 +991,51 @@ class StudentsViewset(ViewSet):
         return Response(response_data, status=status.HTTP_200_OK)
 
     @swagger_auto_schema(
-    operation_description="Get list of sessions filtered by class ID",
-    manual_parameters=[
-        openapi.Parameter(
-            'class_id',
-            openapi.IN_QUERY,
-            description="ID of the class to filter sessions",
-            type=openapi.TYPE_INTEGER,
-            required=True
-        )
-    ],
-    responses={
-        200: openapi.Response(
-            description="List of sessions",
-            examples={
-                "application/json": {
-                    "sessions": [
-                        {"id_session": 1, "num_session": 101, "date": "2024-09-10"},
-                        {"id_session": 2, "num_session": 102, "date": "2024-09-11"}
-                    ]
+        operation_summary="Obtener sesiones por clase",
+        operation_description="Obtener lista de sesiones filtradas por ID de clase",
+        security=[{'Token': []}],
+        manual_parameters=[
+            openapi.Parameter(
+                'class_id',
+                openapi.IN_QUERY,
+                description="ID de la clase para filtrar sesiones",
+                type=openapi.TYPE_INTEGER,
+                required=True,
+                example=1
+            )
+        ],
+        responses={
+            200: openapi.Response(
+                description="Lista de sesiones obtenida exitosamente",
+                examples={
+                    "application/json": {
+                        "sessions": [
+                            {"id_session": 1, "num_session": 1, "date": "2024-09-10"},
+                            {"id_session": 2, "num_session": 2, "date": "2024-09-11"}
+                        ]
+                    }
                 }
-            }
-        ),
-        400: openapi.Response(
-            description="Bad request, class_id is required",
-            examples={
-                "application/json": {
-                    "detail": "El ID de la clase es requerido."
+            ),
+            400: openapi.Response(
+                description="Solicitud incorrecta, class_id es requerido",
+                examples={
+                    "application/json": {
+                        "detail": "El ID de la clase es requerido."
+                    }
                 }
-            }
-        ),
-        404: openapi.Response(
-            description="Not found, no sessions found for the given class_id",
-            examples={
-                "application/json": {
-                    "detail": "No se encontraron sesiones para la clase especificada."
+            ),
+            404: openapi.Response(
+                description="No encontrado, no se encontraron sesiones para el class_id dado",
+                examples={
+                    "application/json": {
+                        "detail": "No se encontraron sesiones para la clase especificada."
+                    }
                 }
-            }
-        ),
-        500: openapi.Response(
-            description="Internal server error",
-            examples={
-                "application/json": {
-                    "detail": "Error message"
-                }
-            }
-        )
-    },
-    tags=["Students"]
-)
+            ),
+            500: COMMON_RESPONSES[500]
+        },
+        tags=["👥 Estudiantes"]
+    )
     @action(detail=False, methods=['GET'], url_path='get_sessions_class')
     def get_sessions_class(self, request):
         try:
@@ -676,7 +1071,65 @@ class SupportViewset(ViewSet):
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
     
-    @action(detail=False, methods=['POST'], url_path='send_support', permission_classes=[])
+    @swagger_auto_schema(
+        operation_summary="Enviar mensaje de soporte",
+        operation_description="Enviar un mensaje de soporte técnico al administrador del sistema",
+        security=[{'Token': []}],
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['subject', 'description'],
+            properties={
+                'subject': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Asunto del mensaje',
+                    example='Problema con el sistema de asistencia'
+                ),
+                'description': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Descripción detallada del problema',
+                    example='No puedo actualizar la asistencia de los estudiantes en la clase de Inglés'
+                )
+            },
+        ),
+        responses={
+            200: openapi.Response(
+                description='Mensaje enviado exitosamente',
+                examples={
+                    "application/json": {
+                        "message": "Correo enviado exitosamente."
+                    }
+                }
+            ),
+            400: openapi.Response(
+                description='Datos requeridos faltantes',
+                examples={
+                    "application/json": {
+                        "error": "El asunto y la descripción son requeridos."
+                    }
+                }
+            ),
+            404: openapi.Response(
+                description='Voluntario no encontrado',
+                examples={
+                    "application/json": {
+                        "error": "No se encontró el voluntario asociado al usuario."
+                    }
+                }
+            ),
+            500: openapi.Response(
+                description='Error al enviar el correo',
+                examples={
+                    "application/json": {
+                        "error": "Error al enviar el correo: mensaje de error"
+                    }
+                }
+            ),
+            401: COMMON_RESPONSES[401],
+            403: COMMON_RESPONSES[403]
+        },
+        tags=["🛠️ Soporte"]
+    )
+    @action(detail=False, methods=['POST'], url_path='send_support')
     def send_support(self, request):
         # Obtener el usuario autenticado
         user = request.user

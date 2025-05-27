@@ -12,6 +12,66 @@ def map_attendance_value(value):
     return value
 
 
+# Serializers para documentación de Swagger
+class LoginRequestSerializer(serializers.Serializer):
+    """Serializer para documentar el request de login"""
+    email = serializers.EmailField(help_text="Email del usuario")
+    password = serializers.CharField(max_length=128, help_text="Contraseña del usuario")
+
+
+class LoginResponseSerializer(serializers.Serializer):
+    """Serializer para documentar la respuesta de login"""
+    token = serializers.CharField(help_text="Token de autenticación")
+    user = serializers.DictField(help_text="Información del usuario")
+
+
+class RegisterRequestSerializer(serializers.Serializer):
+    """Serializer para documentar el request de registro"""
+    email = serializers.EmailField(help_text="Email del nuevo usuario")
+    password = serializers.CharField(max_length=128, help_text="Contraseña del nuevo usuario")
+
+
+class ErrorResponseSerializer(serializers.Serializer):
+    """Serializer para documentar respuestas de error"""
+    error = serializers.CharField(help_text="Mensaje de error")
+    detail = serializers.CharField(help_text="Detalle del error", required=False)
+
+
+class SupportRequestSerializer(serializers.Serializer):
+    """Serializer para documentar request de soporte"""
+    subject = serializers.CharField(max_length=200, help_text="Asunto del mensaje")
+    description = serializers.CharField(help_text="Descripción detallada del problema")
+
+
+class AttendanceUpdateRequestSerializer(serializers.Serializer):
+    """Serializer para documentar update de asistencia"""
+    class AttendanceItemSerializer(serializers.Serializer):
+        id = serializers.IntegerField(help_text="ID del estudiante")
+        attendance = serializers.ChoiceField(
+            choices=[('PRESENT', 'Presente'), ('TARDY', 'Tardanza'), ('ABSENT', 'Falta'), ('JUSTIFIED', 'Justificado'), ('', 'No registrado')],
+            help_text="Estado de asistencia"
+        )
+    
+    attendances = AttendanceItemSerializer(many=True, help_text="Lista de asistencias a actualizar")
+    num_session = serializers.IntegerField(help_text="Número de sesión")
+    id_class = serializers.IntegerField(help_text="ID de la clase")
+
+
+class SessionCreateRequestSerializer(serializers.Serializer):
+    """Serializer para documentar creación de sesión"""
+    id_class = serializers.IntegerField(help_text="ID de la clase")
+
+
+class StudentAttendanceResponseSerializer(serializers.Serializer):
+    """Serializer para documentar respuesta de estudiantes con asistencia"""
+    id = serializers.IntegerField(help_text="ID del estudiante")
+    nombre_completo = serializers.CharField(help_text="Nombre completo del estudiante")
+    curso = serializers.CharField(help_text="Nombre del curso")
+    sesion = serializers.IntegerField(help_text="Número de sesión")
+    fecha_nacimiento = serializers.DateField(help_text="Fecha de nacimiento")
+    asistencia = serializers.CharField(help_text="Estado de asistencia")
+
+
 class AttendanceUpdateSerializer(serializers.Serializer):
     
     id = serializers.IntegerField()  # El campo id del estudiante
