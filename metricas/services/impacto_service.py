@@ -1,9 +1,9 @@
-from django.db.models import Count
-# from django.db.models.functions import TruncMonth, TruncWeek, Extract
+from django.db.models import Count, Q
 from datetime import datetime, timedelta
-from api.models import AttendanceStudent, Session, Students, Class, StudentClass
+from api.models import AttendanceStudent, Session, Class
 
 class ImpactoService:
+    """Servicio para cálculo de métricas de impacto"""
     @staticmethod
     def calcular_tasa_asistencia(periodo, clase_id=None):
         """
@@ -29,14 +29,18 @@ class ImpactoService:
             sessions_query = sessions_query.filter(id_class=clase_id)
             attendance_query = attendance_query.filter(id_session__id_class=clase_id)
         
-        # Contar sesiones y asistencias
+        # Contar sesiones y asistencias con optimización
         total_sesiones = sessions_query.count()
         total_asistencias = attendance_query.filter(attendance__in=['ONTIME', 'LATE']).count()
         
+        # Calcular estudiantes únicos solo una vez
+        estudiantes_unicos = attendance_query.values('id_student').distinct().count()
+        
         # Calcular tasa
         tasa_asistencia = 0
-        if total_sesiones > 0 and total_asistencias > 0:
-            tasa_asistencia = (total_asistencias / (total_sesiones * AttendanceStudent.objects.values('id_student').distinct().count())) * 100
+        if total_sesiones > 0 and estudiantes_unicos > 0:
+            sesiones_posibles = total_sesiones * estudiantes_unicos
+            tasa_asistencia = (total_asistencias / sesiones_posibles) * 100
             
         return {
             'periodo': periodo,
@@ -50,15 +54,6 @@ class ImpactoService:
         """
         Obtiene tasas de asistencia desglosadas por clase para un periodo
         """
-        now = datetime.now().date()
-        
-        if periodo == 'mes':
-            start_date = datetime(now.year, now.month, 1).date()
-        elif periodo == 'año' or periodo == 'anio':
-            start_date = datetime(now.year, 1, 1).date()
-        else:
-            start_date = now - timedelta(days=30)  # Default: último mes
-            
         # Obtener todas las clases activas
         clases = Class.objects.filter(status=1)
         
@@ -76,9 +71,7 @@ class ImpactoService:
                 'total_sesiones': datos['total_sesiones']
             })
             
-        return resultados
-
-    @staticmethod
+        return resultados    @staticmethod
     def alumnos_asistencia_regular(periodo='mes', umbral=0.5):
         """
         Obtiene los alumnos con asistencia regular (>= umbral) para un periodo
@@ -92,54 +85,39 @@ class ImpactoService:
         else:
             start_date = now - timedelta(days=30)
             
-        # Obtener todos los estudiantes que han asistido al menos una vez en el periodo
-        estudiantes_asistentes = AttendanceStudent.objects.filter(
+        # Optimización: obtener asistencias con conteos por estudiante en una sola consulta
+        asistencias_por_estudiante = AttendanceStudent.objects.filter(
             id_session__date__gte=start_date
-        ).values('id_student').distinct()
+        ).values('id_student__id', 'id_student__name', 'id_student__last_name').annotate(
+            total_asistencias=Count('id', filter=Q(attendance__in=['ONTIME', 'LATE'])),
+            total_sesiones=Count('id')
+        )
         
-        total_alumnos = estudiantes_asistentes.count()
+        total_alumnos = asistencias_por_estudiante.count()
         alumnos_regulares = []
         total_alumnos_regulares = 0
         
         # Calcular la asistencia para cada estudiante
-        for estudiante_data in estudiantes_asistentes:
-            estudiante_id = estudiante_data['id_student']
-            estudiante = Students.objects.get(id=estudiante_id)
-            
-            # Contar sesiones totales a las que debería haber asistido
-            clases_estudiante = StudentClass.objects.filter(id_student=estudiante_id).values_list('id_class', flat=True)
-            sesiones_total = Session.objects.filter(
-                id_class__in=clases_estudiante, 
-                date__gte=start_date
-            ).count()
-            
-            # Contar asistencias reales
-            asistencias = AttendanceStudent.objects.filter(
-                id_student=estudiante_id,
-                id_session__date__gte=start_date,
-                attendance__in=['ONTIME', 'LATE']
-            ).count()
+        for estudiante_data in asistencias_por_estudiante:
+            total_sesiones = estudiante_data['total_sesiones']
+            asistencias = estudiante_data['total_asistencias']
             
             # Calcular porcentaje
-            porcentaje = 0
-            if sesiones_total > 0:
-                porcentaje = (asistencias / sesiones_total)
+            porcentaje = (asistencias / total_sesiones) if total_sesiones > 0 else 0
                 
             # Verificar si es alumno regular
             if porcentaje >= umbral:
                 total_alumnos_regulares += 1
                 alumnos_regulares.append({
-                    'id': estudiante.id,
-                    'nombre': estudiante.name,
-                    'apellido': estudiante.last_name,
+                    'id': estudiante_data['id_student__id'],
+                    'nombre': estudiante_data['id_student__name'],
+                    'apellido': estudiante_data['id_student__last_name'],
                     'porcentaje_asistencia': round(porcentaje * 100, 2),
                     'total_asistencias': asistencias,
-                    'total_sesiones': sesiones_total
+                    'total_sesiones': total_sesiones
                 })
                 
-        porcentaje_regulares = 0
-        if total_alumnos > 0:
-            porcentaje_regulares = (total_alumnos_regulares / total_alumnos) * 100
+        porcentaje_regulares = (total_alumnos_regulares / total_alumnos * 100) if total_alumnos > 0 else 0
             
         return {
             'porcentaje_alumnos_regulares': round(porcentaje_regulares, 2),
@@ -291,9 +269,7 @@ class ImpactoService:
         return {
             'dia_mayor_asistencia': dia_mayor,
             'asistencias_por_dia': asistencias_por_dia
-        }
-
-    @staticmethod
+        }    @staticmethod
     def promedio_sesiones(periodo='mes'):
         """
         Promedio de sesiones asistidas por alumno
@@ -330,3 +306,8 @@ class ImpactoService:
             'total_asistencias': total_asistencias,
             'total_alumnos': total_alumnos
         }
+
+
+class GestionService:
+    """Servicio para cálculo de métricas de gestión"""
+    pass

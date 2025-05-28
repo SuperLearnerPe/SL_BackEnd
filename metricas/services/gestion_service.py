@@ -1,9 +1,10 @@
-# from django.db.models import Count, Sum, Avg, F, Q, Case, When, Value, IntegerField
-# from django.db.models.functions import TruncMonth, TruncWeek
 from datetime import datetime, timedelta, date
+from django.db.models import Count, Q
 from api.models import AttendanceStudent, Session, Students, Class
 
 class GestionService:
+    """Servicio para cálculo de métricas de gestión"""
+    
     @staticmethod
     def _calcular_edad(birthdate):
         """Calcula la edad en años a partir de la fecha de nacimiento"""
@@ -233,7 +234,6 @@ class GestionService:
             'total_sesiones': total_sesiones,
             'alumnos': sorted(alumnos_data, key=lambda x: x['porcentaje_asistencia'], reverse=True)
         }
-    
     @staticmethod
     def alumnos_asistencia_irregular(periodo='mes', umbral=0.25):
         """
@@ -252,8 +252,7 @@ class GestionService:
             fecha_inicio = now - timedelta(days=30)  # Default: último mes
         
         # Obtener sesiones en el periodo
-        sesiones = Session.objects.filter(date__date__gte=fecha_inicio)
-        total_sesiones = sesiones.count()
+        total_sesiones = Session.objects.filter(date__date__gte=fecha_inicio).count()
         
         if total_sesiones == 0:
             return {
@@ -264,34 +263,34 @@ class GestionService:
                 'alumnos': []
             }
         
-        # Obtener todos los estudiantes que han asistido al menos a una sesión
-        estudiantes_ids = AttendanceStudent.objects.filter(
-            id_session__in=sesiones
-        ).values_list('id_student', flat=True).distinct()
+        # Optimización: obtener asistencias con datos de estudiante en una sola consulta
+        asistencias_por_estudiante = AttendanceStudent.objects.filter(
+            id_session__date__gte=fecha_inicio
+        ).select_related('id_student').values(
+            'id_student__id', 'id_student__name', 'id_student__last_name',
+            'id_student__gender', 'id_student__birthdate'
+        ).annotate(
+            total_asistencias=Count('id', filter=Q(attendance__in=['ONTIME', 'LATE'])),
+            total_registros=Count('id')
+        )
         
-        total_estudiantes = len(estudiantes_ids)
+        total_estudiantes = asistencias_por_estudiante.count()
         alumnos_irregulares = []
         
-        for estudiante_id in estudiantes_ids:
-            # Contar sesiones asistidas
-            asistencias = AttendanceStudent.objects.filter(
-                id_student=estudiante_id,
-                id_session__in=sesiones,
-                attendance__in=['ONTIME', 'LATE']
-            ).count()
+        for estudiante_data in asistencias_por_estudiante:
+            asistencias = estudiante_data['total_asistencias']
             
             # Calcular porcentaje de asistencia
             porcentaje = asistencias / total_sesiones if total_sesiones > 0 else 0
             
             # Si es menor que el umbral, es irregular
             if porcentaje < umbral:
-                estudiante = Students.objects.get(id=estudiante_id)
                 alumnos_irregulares.append({
-                    'id': estudiante.id,
-                    'nombre': estudiante.name,
-                    'apellido': estudiante.last_name,
-                    'genero': estudiante.gender or 'No especificado',
-                    'edad': GestionService._calcular_edad(estudiante.birthdate),
+                    'id': estudiante_data['id_student__id'],
+                    'nombre': estudiante_data['id_student__name'],
+                    'apellido': estudiante_data['id_student__last_name'],
+                    'genero': estudiante_data['id_student__gender'] or 'No especificado',
+                    'edad': GestionService._calcular_edad(estudiante_data['id_student__birthdate']),
                     'asistencias': asistencias,
                     'total_sesiones': total_sesiones,
                     'porcentaje_asistencia': round(porcentaje * 100, 2)
@@ -425,30 +424,34 @@ class GestionService:
             'periodo': periodo,
             'grupos': grupos
         }
-    
     @staticmethod
     def alumnos_inactivos(dias=30):
         """
         Lista de alumnos que no han asistido en los últimos X días
         """
-        fecha_limite = datetime.now().date() - timedelta(days=dias)
+        fecha_limite = datetime.now().date() - timedelta(dias=dias)
         
-        # Todos los estudiantes activos
-        estudiantes = Students.objects.filter(status=1)
+        # Optimización: usar una sola consulta para obtener última asistencia por estudiante
+        estudiantes_con_ultima_asistencia = AttendanceStudent.objects.filter(
+            attendance__in=['ONTIME', 'LATE']
+        ).values('id_student').annotate(
+            ultima_fecha=max('id_session__date')
+        ).select_related('id_student')
+        
+        # Estudiantes activos
+        estudiantes_activos = Students.objects.filter(status=1)
         
         alumnos_inactivos = []
-        for estudiante in estudiantes:
-            # Buscar la última asistencia
-            ultima_asistencia = AttendanceStudent.objects.filter(
-                id_student=estudiante.id,
-                attendance__in=['ONTIME', 'LATE']
-            ).order_by('-id_session__date').first()
+        estudiantes_dict = {est['id_student']: est['ultima_fecha'] for est in estudiantes_con_ultima_asistencia}
+        
+        for estudiante in estudiantes_activos:
+            ultima_asistencia_fecha = estudiantes_dict.get(estudiante.id)
             
             # Si no hay asistencia o es anterior a la fecha límite
-            if not ultima_asistencia or (ultima_asistencia.id_session.date.date() < fecha_limite):
+            if not ultima_asistencia_fecha or ultima_asistencia_fecha < fecha_limite:
                 dias_inactividad = None
-                if ultima_asistencia:
-                    dias_inactividad = (datetime.now().date() - ultima_asistencia.id_session.date.date()).days
+                if ultima_asistencia_fecha:
+                    dias_inactividad = (datetime.now().date() - ultima_asistencia_fecha).days
                 
                 alumnos_inactivos.append({
                     'id': estudiante.id,
@@ -456,7 +459,7 @@ class GestionService:
                     'apellido': estudiante.last_name,
                     'genero': estudiante.gender or 'No especificado',
                     'edad': GestionService._calcular_edad(estudiante.birthdate),
-                    'ultima_asistencia': ultima_asistencia.id_session.date.date() if ultima_asistencia else None,
+                    'ultima_asistencia': ultima_asistencia_fecha,
                     'dias_inactividad': dias_inactividad,
                     'clases': [sc.id_class.name for sc in estudiante.studentclass_set.all()]
                 })

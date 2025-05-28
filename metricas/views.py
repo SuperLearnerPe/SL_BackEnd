@@ -95,7 +95,7 @@ class ImpactoViewSet(viewsets.ViewSet):
         periodo = request.query_params.get("periodo", "mes")
         datos = ImpactoService.dia_mayor_asistencia(periodo)
         return Response(datos, status=status.HTTP_200_OK)
-    
+
     @swagger_auto_schema(
         operation_description="Promedio de sesiones asistidas por alumno",
         manual_parameters=[
@@ -107,29 +107,32 @@ class ImpactoViewSet(viewsets.ViewSet):
         periodo = request.query_params.get("periodo", "mes")
         datos = ImpactoService.promedio_sesiones(periodo)
         return Response(datos, status=status.HTTP_200_OK)
-        
+    
     @swagger_auto_schema(
-        operation_description="Genera un informe Excel completo con todas las métricas de impacto",
+        operation_description="""
+        Genera informe Excel con MÉTRICAS DE IMPACTO según requerimientos:
+        
+        ✅ Tasa de asistencia por clase/día y general
+        ✅ Porcentaje de alumnos regulares (≥50%)
+        ✅ Frecuencia de asistencia (1-3, 4-5, 6+)
+        ✅ Retención mes a mes 
+        ✅ Día con mayor asistencia
+        ✅ Promedio de sesiones por alumno
+        """,
         manual_parameters=[
-            openapi.Parameter('periodo', openapi.IN_QUERY, description="Periodo a analizar (semana, mes, año)", type=openapi.TYPE_STRING, default='mes'),
-            openapi.Parameter('umbral_regular', openapi.IN_QUERY, description="Umbral de asistencia regular (0.0-1.0)", type=openapi.TYPE_NUMBER, default=0.5),
-            openapi.Parameter('meses_retencion', openapi.IN_QUERY, description="Meses para análisis de retención", type=openapi.TYPE_INTEGER, default=6)
+            openapi.Parameter('periodo', openapi.IN_QUERY, description="[OPCIONAL] Periodo (semana, mes, año)", type=openapi.TYPE_STRING, default='mes', required=False),
         ]
     )
     @action(detail=False, methods=["GET"], url_path="excel")
     def excel_impacto(self, request):
         periodo = request.query_params.get("periodo", "mes")
-        umbral_regular = float(request.query_params.get("umbral_regular", 0.5))
-        meses_retencion = int(request.query_params.get("meses_retencion", 6))
+        excel_file = ExcelService.generar_excel_impacto(periodo)
         
-        excel_file = ExcelService.generar_excel_impacto(periodo, umbral_regular, meses_retencion)
-        
-        fecha_actual = datetime.now().strftime('%Y%m%d-%H%M%S')
         response = HttpResponse(
             excel_file,
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
-        response['Content-Disposition'] = f'attachment; filename=metricas_impacto_{fecha_actual}.xlsx'
+        response['Content-Disposition'] = 'attachment; filename=SuperLearner_Metricas_Impacto.xlsx'
         
         return response
 
@@ -271,31 +274,35 @@ class GestionViewSet(viewsets.ViewSet):
         dias = int(request.query_params.get("dias", 30))
         datos = GestionService.alumnos_inactivos(dias)
         return Response(datos, status=status.HTTP_200_OK)
-        
+    
     @swagger_auto_schema(
-        operation_description="Genera un informe Excel completo con todas las métricas de gestión",
+        operation_description="""
+        Genera informe Excel con MÉTRICAS DE GESTIÓN según requerimientos:
+        
+        ✅ Lista diaria: nombre, sexo, edad
+        ✅ Lista semanal: nombre, sexo, edad, total asistencias, porcentaje, estatus
+        ✅ Lista mensual: nombre, sexo, edad, total asistencias, porcentaje, estatus
+        ✅ Alumnos irregulares: <25% asistencia (FIJO)
+        ✅ Grupos por sexo/edad
+        ✅ Alumnos con más de 30 faltas seguidas (FIJO)
+        """,
         manual_parameters=[
-            openapi.Parameter('fecha', openapi.IN_QUERY, description="Fecha para asistencia diaria (YYYY-MM-DD)", type=openapi.TYPE_STRING),
-            openapi.Parameter('fecha_inicio', openapi.IN_QUERY, description="Fecha inicio para asistencia semanal (YYYY-MM-DD)", type=openapi.TYPE_STRING),
-            openapi.Parameter('mes', openapi.IN_QUERY, description="Mes para asistencia mensual (1-12)", type=openapi.TYPE_INTEGER),
-            openapi.Parameter('anio', openapi.IN_QUERY, description="Año para asistencia mensual", type=openapi.TYPE_INTEGER),
-            openapi.Parameter('clase_id', openapi.IN_QUERY, description="ID de clase para filtrar", type=openapi.TYPE_INTEGER),
-            openapi.Parameter('umbral_irregular', openapi.IN_QUERY, description="Umbral para asistencia irregular (0.0-1.0)", type=openapi.TYPE_NUMBER, default=0.25),
-            openapi.Parameter('criterio', openapi.IN_QUERY, description="Criterio para análisis por grupos (sexo, edad)", type=openapi.TYPE_STRING, default='sexo'),
-            openapi.Parameter('dias_inactivos', openapi.IN_QUERY, description="Días para considerar alumnos inactivos", type=openapi.TYPE_INTEGER, default=30)
+            openapi.Parameter('fecha', openapi.IN_QUERY, description="[OPCIONAL] Fecha específica (YYYY-MM-DD)", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('fecha_inicio', openapi.IN_QUERY, description="[OPCIONAL] Fecha inicio semana (YYYY-MM-DD)", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('mes', openapi.IN_QUERY, description="[OPCIONAL] Mes (1-12)", type=openapi.TYPE_INTEGER, required=False),
+            openapi.Parameter('anio', openapi.IN_QUERY, description="[OPCIONAL] Año", type=openapi.TYPE_INTEGER, required=False),
+            openapi.Parameter('clase_id', openapi.IN_QUERY, description="[OPCIONAL] ID de clase", type=openapi.TYPE_INTEGER, required=False),
+            openapi.Parameter('criterio', openapi.IN_QUERY, description="[OPCIONAL] Criterio grupos (sexo, edad)", type=openapi.TYPE_STRING, default='sexo', required=False),
         ]
     )
     @action(detail=False, methods=["GET"], url_path="excel")
     def excel_gestion(self, request):
-        # Procesar parámetros
         fecha_str = request.query_params.get("fecha")
         fecha_inicio_str = request.query_params.get("fecha_inicio")
         mes = request.query_params.get("mes")
         anio = request.query_params.get("anio")
         clase_id = request.query_params.get("clase_id")
-        umbral_irregular = float(request.query_params.get("umbral_irregular", 0.25))
         criterio = request.query_params.get("criterio", "sexo")
-        dias_inactivos = int(request.query_params.get("dias_inactivos", 30))
         
         # Convertir fechas si existen
         fecha = None
@@ -327,10 +334,12 @@ class GestionViewSet(viewsets.ViewSet):
         if clase_id:
             clase_id = int(clase_id)
         
-        # Generar Excel
+        # Generar Excel con valores fijos según requerimientos
         excel_file = ExcelService.generar_excel_gestion(
             fecha, fecha_inicio, mes, anio, clase_id,
-            umbral_irregular, criterio, dias_inactivos
+            0.25,  # Umbral irregular fijo <25%
+            criterio, 
+            30     # Faltas seguidas fijo >30
         )
         
         fecha_actual = datetime.now().strftime('%Y%m%d-%H%M%S')

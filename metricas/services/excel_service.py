@@ -1,404 +1,664 @@
+# filepath: c:\Users\USUARIO\Desktop\SL_BackEnd\metricas\services\excel_service_fixed.py
 import pandas as pd
 import io
-from datetime import datetime
-from .impacto_service import ImpactoService
-from .gestion_service import GestionService
+from datetime import datetime, date, timedelta
+from django.db.models import Count, Q
+from api.models import AttendanceStudent, Students, Class, Session
 
 class ExcelService:
     @staticmethod
-    def generar_excel_impacto(periodo="mes", umbral_regular=0.5, meses_retencion=6):
+    def _calcular_edad(birthdate):
+        """Calcula la edad en años a partir de la fecha de nacimiento"""
+        if not birthdate:
+            return None
+        today = date.today()
+        return today.year - birthdate.year - ((today.month, today.day) < (birthdate.month, birthdate.day))
+    
+    @staticmethod
+    def generar_excel_impacto(periodo='mes', umbral_regular=0.5):
         """
-        Genera un informe Excel con todas las métricas de impacto:
-        1. Tasa de asistencia promedio
-        2. Porcentaje y lista de alumnos con asistencia regular
-        3. Frecuencia de asistencia
-        4. Retención de alumnos
-        5. Día de la semana con mayor asistencia
-        6. Promedio de sesiones asistidas por alumno
+        Genera un informe Excel con métricas de impacto según requerimientos:
+        - Tasa de asistencia por clase/día y general
+        - Porcentaje de alumnos regulares (≥50%)
+        - Frecuencia de asistencia (1-3, 4-5, 6+)
+        - Retención mes a mes
+        - Día con mayor asistencia
+        - Promedio de sesiones por alumno
         """
-        # Crear un writer de Excel con pandas
         output = io.BytesIO()
         writer = pd.ExcelWriter(output, engine='xlsxwriter')
-        workbook = writer.book
         
-        # Formato para encabezados
-        header_format = workbook.add_format({
-            'bold': True,
-            'bg_color': '#D9E1F2',
-            'border': 1
-        })
+        # Determinar período de análisis
+        now = date.today()
+        if periodo == 'semana':
+            start_date = now - timedelta(days=now.weekday())
+            titulo_periodo = f"Semana del {start_date}"
+        elif periodo == 'mes':
+            start_date = date(now.year, now.month, 1)
+            titulo_periodo = f"{now.strftime('%B %Y')}"
+        elif periodo == 'año':
+            start_date = date(now.year, 1, 1)
+            titulo_periodo = f"Año {now.year}"
+        else:
+            start_date = now - timedelta(days=30)
+            titulo_periodo = "Últimos 30 días"
         
-        # 1. Hoja: Tasa de asistencia (general y por clase)
-        # ---------------------------------------------
-        tasa_data = ImpactoService.calcular_tasa_asistencia(periodo)
-        clases_data = ImpactoService.asistencia_por_clase(periodo)
+        # 1. TASA DE ASISTENCIA GENERAL
+        total_sesiones_programadas = Session.objects.filter(date__gte=start_date).count()
+        total_asistencias = AttendanceStudent.objects.filter(
+            id_session__date__gte=start_date,
+            attendance='PRESENT'
+        ).count()
+        tasa_general = (total_asistencias / total_sesiones_programadas * 100) if total_sesiones_programadas > 0 else 0
         
-        # Tasa general
-        df_tasa = pd.DataFrame([{
-            'Periodo': tasa_data['periodo'],
-            'Tasa de Asistencia (%)': tasa_data['tasa_asistencia'],
-            'Total Asistencias': tasa_data['total_asistencias'],
-            'Total Sesiones': tasa_data['total_sesiones']
-        }])
+        datos_generales = {
+            'Métrica': [
+                f'Tasa de Asistencia General - {titulo_periodo} (%)',
+                'Total de Asistencias',
+                'Total de Sesiones Programadas', 
+                'Total Estudiantes Únicos'
+            ],
+            'Valor': [
+                round(tasa_general, 2),
+                total_asistencias,
+                total_sesiones_programadas,
+                Students.objects.count()
+            ]
+        }
+        df_general = pd.DataFrame(datos_generales)
+        df_general.to_excel(writer, sheet_name='Tasa Asistencia General', index=False)
+          # 2. TASA DE ASISTENCIA POR CLASE/DÍA
+        # Optimización: Una sola consulta para todas las clases
+        clases_con_datos = Class.objects.prefetch_related(
+            'session_set',
+            'session_set__attendancestudent_set'
+        ).annotate(
+            sesiones_periodo=Count('session', filter=Q(session__date__gte=start_date)),
+            asistencias_periodo=Count('session__attendancestudent', 
+                                    filter=Q(session__date__gte=start_date, 
+                                            session__attendancestudent__attendance='PRESENT'))
+        )
         
-        sheet_name = 'Tasa de Asistencia'
-        df_tasa.to_excel(writer, sheet_name=sheet_name, index=False)
+        clases_data = []
+        for clase in clases_con_datos:
+            tasa_clase = (clase.asistencias_periodo / clase.sesiones_periodo * 100) if clase.sesiones_periodo > 0 else 0
+            
+            clases_data.append({
+                'ID Clase': clase.id,
+                'Nombre Clase': clase.name,
+                'Día': clase.day,
+                'Hora': f"{clase.start_time} - {clase.end_time}",
+                'Sesiones Programadas': clase.sesiones_periodo,
+                'Total Asistencias': clase.asistencias_periodo,
+                'Tasa Asistencia (%)': round(tasa_clase, 2)
+            })
         
-        # Tasas por clase
-        df_clases = pd.DataFrame([
-            {
-                'ID Clase': item['clase_id'],
-                'Nombre': item['clase_nombre'],
-                'Día': item['dia'],
-                'Tasa Asistencia (%)': item['tasa_asistencia'],
-                'Total Asistencias': item['total_asistencias'],
-                'Total Sesiones': item['total_sesiones']
-            } for item in clases_data
-        ])
+        df_clases = pd.DataFrame(clases_data)
+        df_clases.to_excel(writer, sheet_name='Tasa por Clase-Día', index=False)
+          # 3. ALUMNOS CON ASISTENCIA REGULAR (≥50%)
+        # Optimización: calcular sesiones totales una sola vez
+        total_sesiones_periodo = Session.objects.filter(date__gte=start_date).count()
         
-        df_clases.to_excel(writer, sheet_name=sheet_name, startrow=len(df_tasa)+3, index=False)
-        worksheet = writer.sheets[sheet_name]
-        worksheet.write(len(df_tasa)+2, 0, "Desglose por Clase/Día", header_format)
+        # Optimización: obtener todas las asistencias del período con datos relacionados
+        asistencias_periodo = AttendanceStudent.objects.filter(
+            id_session__date__gte=start_date,
+            attendance='PRESENT'
+        ).select_related('id_student').values('id_student__id', 'id_student__name', 
+                                             'id_student__last_name', 'id_student__gender', 
+                                             'id_student__birthdate')
         
-        # 2. Hoja: Alumnos con asistencia regular
-        # ---------------------------------------------
-        alumnos_data = ImpactoService.alumnos_asistencia_regular(periodo, umbral_regular)
+        # Contar asistencias por estudiante
+        from collections import defaultdict
+        asistencias_por_estudiante = defaultdict(int)
+        estudiantes_data = {}
         
-        # Datos generales
-        df_alumnos_general = pd.DataFrame([{
-            'Porcentaje Alumnos Regulares (%)': alumnos_data['porcentaje_alumnos_regulares'],
-            'Total Alumnos Regulares': alumnos_data['total_alumnos_regulares'],
-            'Total Alumnos': alumnos_data['total_alumnos'],
-            'Umbral Considerado (%)': umbral_regular * 100
-        }])
+        for asistencia in asistencias_periodo:
+            est_id = asistencia['id_student__id']
+            asistencias_por_estudiante[est_id] += 1
+            estudiantes_data[est_id] = {
+                'name': asistencia['id_student__name'],
+                'last_name': asistencia['id_student__last_name'], 
+                'gender': asistencia['id_student__gender'],
+                'birthdate': asistencia['id_student__birthdate']
+            }
         
-        sheet_name = 'Alumnos Regulares'
-        df_alumnos_general.to_excel(writer, sheet_name=sheet_name, index=False)
+        total_alumnos_asistentes = len(estudiantes_data)
+        alumnos_regulares = []
         
-        # Lista detallada de alumnos regulares
-        if alumnos_data['alumnos_regulares']:
-            df_alumnos_lista = pd.DataFrame([
-                {
-                    'ID': alumno['id'],
-                    'Nombre': alumno['nombre'],
-                    'Apellido': alumno['apellido'],
-                    'Género': alumno['genero'],
-                    'Edad': alumno['edad'],
-                    'Porcentaje Asistencia (%)': alumno['porcentaje_asistencia'],
-                    'Asistencias': alumno['asistencias'],
-                    'Total Sesiones': alumno['total_sesiones']
-                } for alumno in alumnos_data['alumnos_regulares']
-            ])
-            df_alumnos_lista.to_excel(writer, sheet_name=sheet_name, startrow=len(df_alumnos_general)+3, index=False)
-            worksheet = writer.sheets[sheet_name]
-            worksheet.write(len(df_alumnos_general)+2, 0, "Lista de Alumnos con Asistencia Regular", header_format)
+        for est_id, asistencias_count in asistencias_por_estudiante.items():
+            porcentaje = (asistencias_count / total_sesiones_periodo * 100) if total_sesiones_periodo > 0 else 0
+            
+            if porcentaje >= 50:  # Exactamente ≥50% según requerimientos
+                est_data = estudiantes_data[est_id]
+                alumnos_regulares.append({
+                    'ID': est_id,
+                    'Nombre': est_data['name'],
+                    'Apellido': est_data['last_name'],
+                    'Género': est_data['gender'],
+                    'Edad': ExcelService._calcular_edad(est_data['birthdate']),
+                    'Total Asistencias': asistencias_count,
+                    'Total Sesiones': total_sesiones_periodo,
+                    'Porcentaje Asistencia (%)': round(porcentaje, 2),
+                    'Estatus': 'Regular'
+                })
         
-        # 3. Hoja: Frecuencia de asistencia
-        # ---------------------------------------------
-        frecuencia_data = ImpactoService.frecuencia_asistencia(periodo)
+        porcentaje_regulares = (len(alumnos_regulares) / total_alumnos_asistentes * 100) if total_alumnos_asistentes > 0 else 0
         
-        # Datos resumen
-        df_frecuencia = pd.DataFrame([{
-            'Rango 1-3 sesiones': frecuencia_data['rango_1_3'],
-            'Rango 4-5 sesiones': frecuencia_data['rango_4_5'],
-            'Rango 6+ sesiones': frecuencia_data['rango_6_mas']
-        }])
+        # Crear resumen y lista de alumnos regulares
+        resumen_regulares = {
+            'Métrica': [
+                f'Porcentaje de Alumnos Regulares - {titulo_periodo}',
+                'Total Alumnos Regulares (≥50%)',
+                'Total Alumnos Asistentes',
+                'Fórmula'
+            ],
+            'Valor': [
+                f"{round(porcentaje_regulares, 2)}%",
+                len(alumnos_regulares),
+                total_alumnos_asistentes,
+                'Alumnos ≥50% asistencia / Total alumnos asistentes × 100%'
+            ]
+        }
+        df_resumen_reg = pd.DataFrame(resumen_regulares)
+        df_regulares = pd.DataFrame(alumnos_regulares)
         
-        sheet_name = 'Frecuencia Asistencia'
-        df_frecuencia.to_excel(writer, sheet_name=sheet_name, index=False)
+        # Escribir en una sola hoja combinando ambos DataFrames
+        df_resumen_reg.to_excel(writer, sheet_name='Alumnos Regulares', startrow=0, index=False)
+        if not df_regulares.empty:
+            df_regulares.to_excel(writer, sheet_name='Alumnos Regulares', startrow=len(df_resumen_reg) + 2, index=False)
+          # 4. FRECUENCIA DE ASISTENCIA (1-3, 4-5, 6+)
+        rango_1_3 = 0
+        rango_4_5 = 0  
+        rango_6_mas = 0
         
-        # Distribución detallada
-        df_distribucion = pd.DataFrame({
-            'Número de Sesiones': list(frecuencia_data['distribucion'].keys()),
-            'Cantidad de Alumnos': list(frecuencia_data['distribucion'].values())
-        })
-        df_distribucion.to_excel(writer, sheet_name=sheet_name, startrow=len(df_frecuencia)+3, index=False)
-        worksheet = writer.sheets[sheet_name]
-        worksheet.write(len(df_frecuencia)+2, 0, "Distribución Detallada", header_format)
+        for est_id, asistencias_count in asistencias_por_estudiante.items():
+            if 1 <= asistencias_count <= 3:
+                rango_1_3 += 1
+            elif 4 <= asistencias_count <= 5:
+                rango_4_5 += 1
+            elif asistencias_count >= 6:
+                rango_6_mas += 1
         
-        # 4. Hoja: Retención de alumnos
-        # ---------------------------------------------
-        retencion_data = ImpactoService.retencion_alumnos(meses_retencion)
+        frecuencia_data = {
+            'Rango de Asistencias': ['1-3 veces', '4-5 veces', '6 o más veces'],
+            'Cantidad de Alumnos': [rango_1_3, rango_4_5, rango_6_mas],
+            'Porcentaje': [
+                round((rango_1_3/total_alumnos_asistentes*100), 2) if total_alumnos_asistentes > 0 else 0,
+                round((rango_4_5/total_alumnos_asistentes*100), 2) if total_alumnos_asistentes > 0 else 0,
+                round((rango_6_mas/total_alumnos_asistentes*100), 2) if total_alumnos_asistentes > 0 else 0
+            ]
+        }
+        df_frecuencia = pd.DataFrame(frecuencia_data)
+        df_frecuencia.to_excel(writer, sheet_name='Frecuencia Asistencia', index=False)
         
-        df_retencion = pd.DataFrame([
-            {
-                'Mes': item['mes'],
-                'Total Alumnos': item['total_alumnos'],
-                'Nuevos Alumnos': item['nuevos_alumnos'],
-                'Alumnos Retenidos': item['alumnos_retenidos'],
-                'Tasa de Retención (%)': item['tasa_retencion']
-            } for item in retencion_data
-        ])
+        # 5. RETENCIÓN MES A MES (últimos 6 meses)
+        retencion_data = []
+        for i in range(6):
+            mes_actual = now - timedelta(days=30 * i)
+            mes_anterior = now - timedelta(days=30 * (i + 1))
+            
+            inicio_mes_actual = date(mes_actual.year, mes_actual.month, 1)
+            if mes_actual.month == 12:
+                inicio_mes_siguiente = date(mes_actual.year + 1, 1, 1)
+            else:
+                inicio_mes_siguiente = date(mes_actual.year, mes_actual.month + 1, 1)
+            
+            inicio_mes_anterior = date(mes_anterior.year, mes_anterior.month, 1)
+            
+            # Estudiantes que asistieron el mes actual
+            estudiantes_mes_actual = AttendanceStudent.objects.filter(
+                id_session__date__gte=inicio_mes_actual,
+                id_session__date__lt=inicio_mes_siguiente,
+                attendance='PRESENT'
+            ).values('id_student').distinct()
+            
+            # Estudiantes que también asistieron el mes anterior
+            estudiantes_mes_anterior = AttendanceStudent.objects.filter(
+                id_session__date__gte=inicio_mes_anterior,
+                id_session__date__lt=inicio_mes_actual,
+                attendance='PRESENT'
+            ).values('id_student').distinct()
+            
+            # Estudiantes retenidos (estuvieron en ambos meses)
+            ids_mes_actual = set([e['id_student'] for e in estudiantes_mes_actual])
+            ids_mes_anterior = set([e['id_student'] for e in estudiantes_mes_anterior])
+            retenidos = len(ids_mes_actual.intersection(ids_mes_anterior))
+            
+            tasa_retencion = (retenidos / len(ids_mes_anterior) * 100) if ids_mes_anterior else 0
+            
+            retencion_data.append({
+                'Mes': mes_actual.strftime('%B %Y'),
+                'Total Alumnos Mes Actual': len(ids_mes_actual),
+                'Total Alumnos Mes Anterior': len(ids_mes_anterior),
+                'Alumnos Retenidos': retenidos,
+                'Tasa Retención (%)': round(tasa_retencion, 2)
+            })
         
-        df_retencion.to_excel(writer, sheet_name='Retención Alumnos', index=False)
+        df_retencion = pd.DataFrame(retencion_data)
+        df_retencion.to_excel(writer, sheet_name='Retención Mes a Mes', index=False)
         
-        # 5. Hoja: Día con mayor asistencia
-        # ---------------------------------------------
-        dia_data = ImpactoService.dia_mayor_asistencia(periodo)
+        # 6. DÍA CON MAYOR ASISTENCIA
+        dias_semana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+        asistencias_por_dia = {}
         
-        # Datos resumen
-        df_dia = pd.DataFrame([{
-            'Día con Mayor Asistencia': dia_data['dia_mayor_asistencia'],
-            'Total Asistencias': dia_data['asistencias_por_dia'].get(dia_data['dia_mayor_asistencia'], 0)
-        }])
+        for i in range(7):
+            # Django: 1=Domingo, 2=Lunes, 3=Martes, 4=Miércoles, 5=Jueves, 6=Viernes, 7=Sábado
+            # Convertir índice de lista (0=Lunes) a número de Django
+            django_day_mapping = {
+                0: 2,  # Lunes
+                1: 3,  # Martes
+                2: 4,  # Miércoles
+                3: 5,  # Jueves
+                4: 6,  # Viernes
+                5: 7,  # Sábado
+                6: 1   # Domingo
+            }
+            dia_semana_num = django_day_mapping[i]
+            
+            asistencias_dia = AttendanceStudent.objects.filter(
+                id_session__date__gte=start_date,
+                id_session__date__week_day=dia_semana_num,
+                attendance='PRESENT'
+            ).count()
+            
+            asistencias_por_dia[dias_semana[i]] = asistencias_dia
         
-        sheet_name = 'Días Asistencia'
-        df_dia.to_excel(writer, sheet_name=sheet_name, index=False)
+        dia_mayor = max(asistencias_por_dia, key=asistencias_por_dia.get) if asistencias_por_dia else 'N/A'
         
-        # Distribución por día
-        df_dias = pd.DataFrame({
-            'Día': list(dia_data['asistencias_por_dia'].keys()),
-            'Asistencias': list(dia_data['asistencias_por_dia'].values())
-        })
-        df_dias.to_excel(writer, sheet_name=sheet_name, startrow=len(df_dia)+3, index=False)
-        worksheet = writer.sheets[sheet_name]
-        worksheet.write(len(df_dia)+2, 0, "Asistencias por Día de la Semana", header_format)
+        dias_data = []
+        for dia, asistencias in asistencias_por_dia.items():
+            dias_data.append({
+                'Día de la Semana': dia,
+                'Total Asistencias': asistencias,
+                'Es Día Mayor': 'Sí' if dia == dia_mayor else 'No'
+            })
         
-        # 6. Hoja: Promedio de sesiones por alumno
-        # ---------------------------------------------
-        promedio_data = ImpactoService.promedio_sesiones(periodo)
+        df_dias = pd.DataFrame(dias_data)
+        df_dias.to_excel(writer, sheet_name='Día Mayor Asistencia', index=False)
         
-        df_promedio = pd.DataFrame([{
-            'Promedio Sesiones por Alumno': promedio_data['promedio_sesiones'],
-            'Total Asistencias': promedio_data['total_asistencias'],
-            'Total Alumnos': promedio_data['total_alumnos']
-        }])
+        # 7. PROMEDIO DE SESIONES POR ALUMNO
+        total_asistencias_unicas = AttendanceStudent.objects.filter(
+            id_session__date__gte=start_date,
+            attendance='PRESENT'
+        ).count()
         
-        df_promedio.to_excel(writer, sheet_name='Promedio Sesiones', index=False)
+        total_alumnos_unicos = AttendanceStudent.objects.filter(
+            id_session__date__gte=start_date
+        ).values('id_student').distinct().count()
         
-        # Guardar el archivo Excel
+        promedio_sesiones = (total_asistencias_unicas / total_alumnos_unicos) if total_alumnos_unicos > 0 else 0
+        
+        promedio_data = {
+            'Métrica': [
+                f'Promedio de Sesiones por Alumno - {titulo_periodo}',
+                'Total de Asistencias',
+                'Total de Alumnos Únicos',
+                'Fórmula'
+            ],
+            'Valor': [
+                round(promedio_sesiones, 2),
+                total_asistencias_unicas,
+                total_alumnos_unicos,
+                'Total de Asistencias / Total de Alumnos que asistieron al menos 1 vez'
+            ]
+        }
+        df_promedio = pd.DataFrame(promedio_data)
+        df_promedio.to_excel(writer, sheet_name='Promedio Sesiones Alumno', index=False)
+        
+        # Cerrar el writer y devolver el buffer
         writer.close()
         output.seek(0)
         
         return output
-
+    
     @staticmethod
     def generar_excel_gestion(fecha=None, fecha_inicio=None, mes=None, anio=None, 
-                             clase_id=None, umbral_irregular=0.25, criterio='sexo', 
-                             dias_inactivos=30):
+                            clase_id=None, umbral_irregular=0.25, criterio='sexo', dias_inactivos=30):
         """
-        Genera un informe Excel con todas las métricas de gestión:
-        1. Lista de asistencia diaria
-        2. Lista de asistencia semanal
-        3. Lista de asistencia mensual
-        4. Alumnos con asistencia irregular
-        5. Grupos con mayor/menor asistencia
-        6. Lista de alumnos inactivos
+        Genera un informe Excel con métricas de gestión según requerimientos:
+        - Lista diaria: nombre, sexo, edad
+        - Lista semanal: nombre, sexo, edad, total asistencias, porcentaje, estatus
+        - Lista mensual: nombre, sexo, edad, total asistencias, porcentaje, estatus
+        - Alumnos irregulares: <25% asistencia
+        - Grupos por sexo/edad
+        - Alumnos con más de 30 faltas seguidas
         """
-        # Preparar fecha actual si es necesario
-        now = datetime.now()
-        if not fecha:
-            fecha = now.date()
-        if not fecha_inicio:
-            fecha_inicio = now.date().replace(day=1)
-        if not mes:
-            mes = now.month
-        if not anio:
-            anio = now.year
-        
-        # Crear un writer de Excel con pandas
         output = io.BytesIO()
         writer = pd.ExcelWriter(output, engine='xlsxwriter')
-        workbook = writer.book
         
-        # Formato para encabezados
-        header_format = workbook.add_format({
-            'bold': True,
-            'bg_color': '#D9E1F2',
-            'border': 1
-        })
+        # 1. LISTA DE ASISTENCIA DIARIA (si se especifica fecha)
+        if fecha:
+            try:
+                fecha_obj = datetime.strptime(str(fecha), '%Y-%m-%d').date()
+                
+                query_filter = {'id_session__date': fecha_obj}
+                if clase_id:
+                    query_filter['id_session__id_class__id'] = clase_id
+                
+                asistencias_diarias = AttendanceStudent.objects.filter(**query_filter).select_related(
+                    'id_student', 'id_session__id_class'
+                )
+                
+                datos_diarios = []
+                for asistencia in asistencias_diarias:
+                    datos_diarios.append({
+                        'ID Estudiante': asistencia.id_student.id,
+                        'Nombre': asistencia.id_student.name,
+                        'Apellido': asistencia.id_student.last_name,
+                        'Sexo': asistencia.id_student.gender,
+                        'Edad': ExcelService._calcular_edad(asistencia.id_student.birthdate),
+                        'Clase': asistencia.id_session.id_class.name,
+                        'Sesión': asistencia.id_session.num_session,
+                        'Asistencia': asistencia.attendance or 'No Registrado',
+                        'Fecha': fecha_obj
+                    })
+                
+                df_diario = pd.DataFrame(datos_diarios)
+                df_diario.to_excel(writer, sheet_name='Lista Asistencia Diaria', index=False)
+            except Exception as e:
+                df_diario = pd.DataFrame({'Mensaje': [f'Error con fecha: {str(e)}']})
+                df_diario.to_excel(writer, sheet_name='Lista Asistencia Diaria', index=False)
         
-        # 1. Hoja: Asistencia diaria
-        # ---------------------------------------------
-        asistencia_diaria = GestionService.lista_asistencia_diaria(fecha, clase_id)
+        # 2. LISTA DE ASISTENCIA SEMANAL (con estatus)
+        if fecha_inicio:
+            fecha_fin = fecha_inicio + timedelta(days=6)
+            
+            query_filter = {
+                'id_session__date__gte': fecha_inicio,
+                'id_session__date__lte': fecha_fin
+            }
+            if clase_id:
+                query_filter['id_session__id_class__id'] = clase_id
+            
+            # Obtener estudiantes y calcular estadísticas
+            estudiantes_semana = {}
+            asistencias_semana = AttendanceStudent.objects.filter(**query_filter).select_related('id_student')
+            
+            total_sesiones_semana = Session.objects.filter(
+                date__gte=fecha_inicio,
+                date__lte=fecha_fin
+            ).count()
+            
+            for asistencia in asistencias_semana:
+                est_id = asistencia.id_student.id
+                if est_id not in estudiantes_semana:
+                    estudiantes_semana[est_id] = {
+                        'estudiante': asistencia.id_student,
+                        'presentes': 0,
+                        'total_registros': 0
+                    }
+                
+                estudiantes_semana[est_id]['total_registros'] += 1
+                if asistencia.attendance == 'PRESENT':
+                    estudiantes_semana[est_id]['presentes'] += 1
+            
+            datos_semanales = []
+            for est_data in estudiantes_semana.values():
+                porcentaje = (est_data['presentes'] / total_sesiones_semana * 100) if total_sesiones_semana > 0 else 0
+                
+                # Determinar estatus según requerimientos
+                if porcentaje >= 50:
+                    estatus = 'regular'
+                elif porcentaje > 0:
+                    estatus = 'baja asistencia'
+                else:
+                    estatus = 'ausente'
+                
+                datos_semanales.append({
+                    'ID': est_data['estudiante'].id,
+                    'Nombre': est_data['estudiante'].name,
+                    'Apellido': est_data['estudiante'].last_name,
+                    'Sexo': est_data['estudiante'].gender,
+                    'Edad': ExcelService._calcular_edad(est_data['estudiante'].birthdate),
+                    'Total Asistencias': est_data['presentes'],
+                    'Total Sesiones': total_sesiones_semana,
+                    'Porcentaje Asistencia (%)': round(porcentaje, 2),
+                    'Estatus': estatus
+                })
+            
+            df_semanal = pd.DataFrame(datos_semanales)
+            df_semanal.to_excel(writer, sheet_name='Lista Asistencia Semanal', index=False)
         
-        # Datos generales
-        df_diaria_general = pd.DataFrame([{
-            'Fecha': asistencia_diaria['fecha'],
-            'Clase': asistencia_diaria['clase'] if 'clase' in asistencia_diaria else 'Todas',
-            'Total Alumnos': asistencia_diaria['total_alumnos']
-        }])
+        # 3. LISTA DE ASISTENCIA MENSUAL (con estatus)
+        if mes and anio:
+            query_filter = {
+                'id_session__date__month': mes,
+                'id_session__date__year': anio
+            }
+            if clase_id:
+                query_filter['id_session__id_class__id'] = clase_id
+            
+            # Obtener estudiantes y calcular estadísticas
+            estudiantes_mes = {}
+            asistencias_mes = AttendanceStudent.objects.filter(**query_filter).select_related('id_student')
+            total_sesiones_mes = Session.objects.filter(
+                date__month=mes,
+                date__year=anio
+            ).count()
+            
+            for asistencia in asistencias_mes:
+                est_id = asistencia.id_student.id
+                if est_id not in estudiantes_mes:
+                    estudiantes_mes[est_id] = {
+                        'estudiante': asistencia.id_student,
+                        'presentes': 0,
+                        'total_registros': 0
+                    }
+                
+                estudiantes_mes[est_id]['total_registros'] += 1
+                if asistencia.attendance == 'PRESENT':
+                    estudiantes_mes[est_id]['presentes'] += 1
+            
+            datos_mensuales = []
+            for est_data in estudiantes_mes.values():
+                porcentaje = (est_data['presentes'] / total_sesiones_mes * 100) if total_sesiones_mes > 0 else 0
+                
+                # Determinar estatus según requerimientos
+                if porcentaje >= 50:
+                    estatus = 'regular'
+                elif porcentaje >= 25:
+                    estatus = 'baja asistencia'
+                else:
+                    estatus = 'ausente'
+                
+                datos_mensuales.append({
+                    'ID': est_data['estudiante'].id,
+                    'Nombre': est_data['estudiante'].name,
+                    'Apellido': est_data['estudiante'].last_name,
+                    'Sexo': est_data['estudiante'].gender,
+                    'Edad': ExcelService._calcular_edad(est_data['estudiante'].birthdate),
+                    'Total Asistencias': est_data['presentes'],
+                    'Total Sesiones': total_sesiones_mes,
+                    'Porcentaje Asistencia (%)': round(porcentaje, 2),
+                    'Estatus': estatus
+                })
+            
+            df_mensual = pd.DataFrame(datos_mensuales)
+            df_mensual.to_excel(writer, sheet_name='Lista Asistencia Mensual', index=False)
+          # 4. ALUMNOS CON ASISTENCIA IRREGULAR (<25%)
+        # Optimización: usar las asistencias ya calculadas
+        alumnos_irregulares = []
         
-        sheet_name = 'Asistencia Diaria'
-        df_diaria_general.to_excel(writer, sheet_name=sheet_name, index=False)
+        # Obtener todos los estudiantes que han tenido alguna asistencia
+        estudiantes_todos = Students.objects.select_related().prefetch_related('attendancestudent_set')
         
-        # Listado de alumnos
-        if 'alumnos' in asistencia_diaria and asistencia_diaria['alumnos']:
-            df_diaria_alumnos = pd.DataFrame([
-                {
-                    'ID': alumno['id'],
-                    'Nombre': alumno['nombre'],
-                    'Apellido': alumno['apellido'],
-                    'Género': alumno['genero'],
-                    'Edad': alumno['edad'],
-                    'Asistencia': alumno['asistencia']
-                } for alumno in asistencia_diaria['alumnos']
-            ])
-            df_diaria_alumnos.to_excel(writer, sheet_name=sheet_name, startrow=len(df_diaria_general)+3, index=False)
-            worksheet = writer.sheets[sheet_name]
-            worksheet.write(len(df_diaria_general)+2, 0, "Listado de Alumnos", header_format)
+        # Obtener conteos de asistencias en una sola consulta
+        asistencias_totales = AttendanceStudent.objects.values('id_student').annotate(
+            total_presentes=Count('id', filter=Q(attendance='PRESENT')),
+            total_registros=Count('id')
+        )
         
-        # 2. Hoja: Asistencia semanal
-        # ---------------------------------------------
-        asistencia_semanal = GestionService.lista_asistencia_semanal(fecha_inicio, clase_id)
+        # Crear diccionario para acceso rápido
+        asistencias_dict = {a['id_student']: a for a in asistencias_totales}
         
-        # Datos generales
-        df_semanal_general = pd.DataFrame([{
-            'Semana Inicio': asistencia_semanal['semana_inicio'],
-            'Semana Fin': asistencia_semanal['semana_fin'],
-            'Total Alumnos': asistencia_semanal['total_alumnos'],
-            'Total Sesiones': asistencia_semanal['total_sesiones']
-        }])
+        for estudiante in estudiantes_todos:
+            if estudiante.id in asistencias_dict:
+                data = asistencias_dict[estudiante.id]
+                total_registros_est = data['total_registros']
+                presentes_est = data['total_presentes']
+                
+                if total_registros_est > 0:
+                    porcentaje = presentes_est / total_registros_est
+                    if porcentaje < 0.25:  # Exactamente <25% según requerimientos
+                        alumnos_irregulares.append({
+                            'ID': estudiante.id,
+                            'Nombre': estudiante.name,
+                            'Apellido': estudiante.last_name,
+                            'Sexo': estudiante.gender,
+                            'Edad': ExcelService._calcular_edad(estudiante.birthdate),
+                            'Porcentaje Asistencia (%)': round(porcentaje * 100, 2),
+                            'Total Presentes': presentes_est,
+                            'Total Registros': total_registros_est
+                        })
         
-        sheet_name = 'Asistencia Semanal'
-        df_semanal_general.to_excel(writer, sheet_name=sheet_name, index=False)
+        df_irregulares = pd.DataFrame(alumnos_irregulares)
+        df_irregulares.to_excel(writer, sheet_name='Alumnos Irregulares', index=False)
+          # 5. GRUPOS CON MAYOR O MENOR ASISTENCIA
+        if criterio == 'sexo':
+            grupos_data = []
+            for genero in ['M', 'F']:
+                estudiantes_genero = Students.objects.filter(gender=genero)
+                total_estudiantes = estudiantes_genero.count()
+                
+                if total_estudiantes > 0:
+                    total_asistencias = AttendanceStudent.objects.filter(
+                        id_student__in=estudiantes_genero,
+                        attendance='PRESENT'
+                    ).count()
+                    total_registros = AttendanceStudent.objects.filter(
+                        id_student__in=estudiantes_genero
+                    ).count()
+                    
+                    porcentaje = (total_asistencias / total_registros * 100) if total_registros > 0 else 0
+                    
+                    grupos_data.append({
+                        'Sexo': 'Masculino' if genero == 'M' else 'Femenino',
+                        'Total Estudiantes': total_estudiantes,
+                        'Total Asistencias': total_asistencias,
+                        'Total Registros': total_registros,
+                        'Porcentaje Asistencia (%)': round(porcentaje, 2)
+                    })
+            
+            df_grupos = pd.DataFrame(grupos_data)
+            df_grupos.to_excel(writer, sheet_name='Grupos por Sexo', index=False)
         
-        # Listado de alumnos
-        if 'alumnos' in asistencia_semanal and asistencia_semanal['alumnos']:
-            df_semanal_alumnos = pd.DataFrame([
-                {
-                    'ID': alumno['id'],
-                    'Nombre': alumno['nombre'],
-                    'Apellido': alumno['apellido'],
-                    'Género': alumno['genero'],
-                    'Edad': alumno['edad'],
-                    'Asistencias': alumno['total_asistencias'],
-                    'Sesiones': alumno['total_sesiones'],
-                    'Porcentaje (%)': alumno['porcentaje_asistencia'],
-                    'Estatus': alumno['estatus']
-                } for alumno in asistencia_semanal['alumnos']
-            ])
-            df_semanal_alumnos.to_excel(writer, sheet_name=sheet_name, startrow=len(df_semanal_general)+3, index=False)
-            worksheet = writer.sheets[sheet_name]
-            worksheet.write(len(df_semanal_general)+2, 0, "Listado de Alumnos", header_format)
+        else:  # criterio == 'edad'
+            rangos_edad = [
+                (0, 8, '0-8 años'),
+                (9, 12, '9-12 años'),
+                (13, 16, '13-16 años'),
+                (17, 100, '17+ años')
+            ]
+            grupos_data = []
+            
+            # Optimización: obtener todas las edades de una vez
+            estudiantes_con_edad = Students.objects.filter(birthdate__isnull=False).values('id', 'birthdate')
+            estudiantes_por_rango = {label: [] for _, _, label in rangos_edad}
+            
+            today = date.today()
+            for est in estudiantes_con_edad:
+                edad = today.year - est['birthdate'].year - ((today.month, today.day) < (est['birthdate'].month, est['birthdate'].day))
+                for min_edad, max_edad, label in rangos_edad:
+                    if min_edad <= edad <= max_edad:
+                        estudiantes_por_rango[label].append(est['id'])
+                        break
+            
+            for min_edad, max_edad, label in rangos_edad:
+                estudiantes_rango = estudiantes_por_rango[label]
+                total_estudiantes = len(estudiantes_rango)
+                
+                if total_estudiantes > 0:
+                    total_asistencias = AttendanceStudent.objects.filter(
+                        id_student__in=estudiantes_rango,
+                        attendance='PRESENT'
+                    ).count()
+                    total_registros = AttendanceStudent.objects.filter(
+                        id_student__in=estudiantes_rango
+                    ).count()
+                    
+                    porcentaje = (total_asistencias / total_registros * 100) if total_registros > 0 else 0
+                    
+                    grupos_data.append({
+                        'Rango Edad': label,
+                        'Total Estudiantes': total_estudiantes,
+                        'Total Asistencias': total_asistencias,
+                        'Total Registros': total_registros,
+                        'Porcentaje Asistencia (%)': round(porcentaje, 2)
+                    })
+            
+            df_grupos = pd.DataFrame(grupos_data)
+            df_grupos.to_excel(writer, sheet_name='Grupos por Edad', index=False)
+          # 6. LISTA DE ALUMNOS CON MÁS DE 30 FALTAS SEGUIDAS
+        # Optimización: una sola consulta para obtener todas las asistencias ordenadas
+        asistencias_ordenadas = AttendanceStudent.objects.select_related('id_student').order_by('id_student', 'id_session__date')
         
-        # 3. Hoja: Asistencia mensual
-        # ---------------------------------------------
-        asistencia_mensual = GestionService.lista_asistencia_mensual(mes, anio, clase_id)
+        # Procesar por estudiante
+        alumnos_faltas_seguidas = []
+        estudiante_actual = None
+        faltas_consecutivas = 0
+        max_faltas_consecutivas = 0
         
-        # Datos generales
-        df_mensual_general = pd.DataFrame([{
-            'Mes': asistencia_mensual['mes'],
-            'Año': asistencia_mensual['anio'],
-            'Total Alumnos': asistencia_mensual['total_alumnos'],
-            'Total Sesiones': asistencia_mensual['total_sesiones']
-        }])
+        for asistencia in asistencias_ordenadas:
+            if estudiante_actual != asistencia.id_student:
+                # Nuevo estudiante - procesar el anterior si existe
+                if estudiante_actual and max_faltas_consecutivas > 30:
+                    alumnos_faltas_seguidas.append({
+                        'ID': estudiante_actual.id,
+                        'Nombre': estudiante_actual.name,
+                        'Apellido': estudiante_actual.last_name,
+                        'Sexo': estudiante_actual.gender,
+                        'Edad': ExcelService._calcular_edad(estudiante_actual.birthdate),
+                        'Máximo Faltas Consecutivas': max_faltas_consecutivas,
+                        'Estado': 'Requiere Seguimiento'
+                    })
+                
+                # Reiniciar contadores para el nuevo estudiante
+                estudiante_actual = asistencia.id_student
+                faltas_consecutivas = 0
+                max_faltas_consecutivas = 0
+            
+            # Procesar asistencia actual
+            if asistencia.attendance == 'ABSENT':
+                faltas_consecutivas += 1
+                max_faltas_consecutivas = max(max_faltas_consecutivas, faltas_consecutivas)
+            else:
+                faltas_consecutivas = 0
         
-        sheet_name = 'Asistencia Mensual'
-        df_mensual_general.to_excel(writer, sheet_name=sheet_name, index=False)
-        
-        # Listado de alumnos
-        if 'alumnos' in asistencia_mensual and asistencia_mensual['alumnos']:
-            df_mensual_alumnos = pd.DataFrame([
-                {
-                    'ID': alumno['id'],
-                    'Nombre': alumno['nombre'],
-                    'Apellido': alumno['apellido'],
-                    'Género': alumno['genero'],
-                    'Edad': alumno['edad'],
-                    'Asistencias': alumno['total_asistencias'],
-                    'Sesiones': alumno['total_sesiones'],
-                    'Porcentaje (%)': alumno['porcentaje_asistencia'],
-                    'Estatus': alumno['estatus']
-                } for alumno in asistencia_mensual['alumnos']
-            ])
-            df_mensual_alumnos.to_excel(writer, sheet_name=sheet_name, startrow=len(df_mensual_general)+3, index=False)
-            worksheet = writer.sheets[sheet_name]
-            worksheet.write(len(df_mensual_general)+2, 0, "Listado de Alumnos", header_format)
-        
-        # 4. Hoja: Alumnos con asistencia irregular
-        # ---------------------------------------------
-        asistencia_irregular = GestionService.alumnos_asistencia_irregular('mes', umbral_irregular)
-        
-        # Datos generales
-        df_irregular_general = pd.DataFrame([{
-            'Periodo': asistencia_irregular['periodo'],
-            'Umbral (%)': asistencia_irregular['umbral'],
-            'Total Alumnos Irregulares': asistencia_irregular['total_alumnos_irregulares'],
-            'Porcentaje (%)': asistencia_irregular['porcentaje']
-        }])
-        
-        sheet_name = 'Asistencia Irregular'
-        df_irregular_general.to_excel(writer, sheet_name=sheet_name, index=False)
-        
-        # Listado de alumnos
-        if 'alumnos' in asistencia_irregular and asistencia_irregular['alumnos']:
-            df_irregular_alumnos = pd.DataFrame([
-                {
-                    'ID': alumno['id'],
-                    'Nombre': alumno['nombre'],
-                    'Apellido': alumno['apellido'],
-                    'Género': alumno['genero'],
-                    'Edad': alumno['edad'],
-                    'Asistencias': alumno['asistencias'],
-                    'Sesiones': alumno['total_sesiones'],
-                    'Porcentaje (%)': alumno['porcentaje_asistencia']
-                } for alumno in asistencia_irregular['alumnos']
-            ])
-            df_irregular_alumnos.to_excel(writer, sheet_name=sheet_name, startrow=len(df_irregular_general)+3, index=False)
-            worksheet = writer.sheets[sheet_name]
-            worksheet.write(len(df_irregular_general)+2, 0, "Listado de Alumnos con Asistencia Irregular", header_format)
-        
-        # 5. Hoja: Análisis por grupos
-        # ---------------------------------------------
-        grupos_asistencia = GestionService.analisis_grupos_asistencia(criterio, 'mes')
-        
-        # Datos generales
-        df_grupos_general = pd.DataFrame([{
-            'Criterio': grupos_asistencia['criterio'],
-            'Periodo': grupos_asistencia['periodo']
-        }])
-        
-        sheet_name = 'Grupos Asistencia'
-        df_grupos_general.to_excel(writer, sheet_name=sheet_name, index=False)
-        
-        # Datos por grupo
-        grupos_data = []
-        for grupo, datos in grupos_asistencia['grupos'].items():
-            grupos_data.append({
-                'Grupo': grupo,
-                'Total Estudiantes': datos['total_estudiantes'],
-                'Asistencias': datos['asistencias'],
-                'Porcentaje (%)': datos['porcentaje']
+        # Procesar el último estudiante
+        if estudiante_actual and max_faltas_consecutivas > 30:
+            alumnos_faltas_seguidas.append({
+                'ID': estudiante_actual.id,
+                'Nombre': estudiante_actual.name,
+                'Apellido': estudiante_actual.last_name,
+                'Sexo': estudiante_actual.gender,
+                'Edad': ExcelService._calcular_edad(estudiante_actual.birthdate),
+                'Máximo Faltas Consecutivas': max_faltas_consecutivas,
+                'Estado': 'Requiere Seguimiento'
             })
         
-        df_grupos = pd.DataFrame(grupos_data)
-        df_grupos.to_excel(writer, sheet_name=sheet_name, startrow=len(df_grupos_general)+3, index=False)
-        worksheet = writer.sheets[sheet_name]
-        worksheet.write(len(df_grupos_general)+2, 0, f"Asistencias por {criterio.capitalize()}", header_format)
+        df_faltas_seguidas = pd.DataFrame(alumnos_faltas_seguidas)
+        df_faltas_seguidas.to_excel(writer, sheet_name='Más de 30 Faltas Seguidas', index=False)
         
-        # 6. Hoja: Alumnos inactivos
-        # ---------------------------------------------
-        alumnos_inactivos = GestionService.alumnos_inactivos(dias_inactivos)
+        # 7. RESUMEN POR CLASES
+        estudiantes_por_clase = []
+        for clase in Class.objects.all():
+            estudiantes_clase = Students.objects.filter(
+                attendancestudent__id_session__id_class=clase
+            ).distinct()
+            
+            estudiantes_por_clase.append({
+                'ID Clase': clase.id,
+                'Nombre Clase': clase.name,
+                'Día': clase.day,
+                'Hora': f"{clase.start_time} - {clase.end_time}",
+                'Total Estudiantes': estudiantes_clase.count(),
+                'Total Sesiones': Session.objects.filter(id_class=clase).count()
+            })
         
-        # Datos generales
-        df_inactivos_general = pd.DataFrame([{
-            'Días Inactividad Mínimo': alumnos_inactivos['dias_inactividad_limite'],
-            'Total Alumnos Inactivos': alumnos_inactivos['total_alumnos_inactivos']
-        }])
+        df_clases_est = pd.DataFrame(estudiantes_por_clase)
+        df_clases_est.to_excel(writer, sheet_name='Resumen por Clases', index=False)
         
-        sheet_name = 'Alumnos Inactivos'
-        df_inactivos_general.to_excel(writer, sheet_name=sheet_name, index=False)
-        
-        # Listado de alumnos
-        if 'alumnos' in alumnos_inactivos and alumnos_inactivos['alumnos']:
-            df_inactivos_alumnos = pd.DataFrame([
-                {
-                    'ID': alumno['id'],
-                    'Nombre': alumno['nombre'],
-                    'Apellido': alumno['apellido'],
-                    'Género': alumno['genero'],
-                    'Edad': alumno['edad'],
-                    'Última Asistencia': alumno['ultima_asistencia'],
-                    'Días Inactividad': alumno['dias_inactividad'],
-                    'Clases': ', '.join(alumno['clases']) if 'clases' in alumno else ''
-                } for alumno in alumnos_inactivos['alumnos']
-            ])
-            df_inactivos_alumnos.to_excel(writer, sheet_name=sheet_name, startrow=len(df_inactivos_general)+3, index=False)
-            worksheet = writer.sheets[sheet_name]
-            worksheet.write(len(df_inactivos_general)+2, 0, "Alumnos sin Asistir", header_format)
-        
-        # Guardar el archivo Excel
+        # Cerrar el writer y devolver el buffer
         writer.close()
         output.seek(0)
         
