@@ -59,6 +59,7 @@ Esta API proporciona acceso completo al sistema de gestión educativa SuperLearn
     public=True,
     permission_classes=[permissions.AllowAny],
     authentication_classes=[],
+    url="https://backend-superlearner-1083661745884.us-central1.run.app/api",
 )
 
 # Configuración del router principal
