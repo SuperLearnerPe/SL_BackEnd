@@ -64,10 +64,10 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -170,15 +170,46 @@ CORS_ALLOWED_ORIGINS = [
     "http://0.0.0.0:8000",
     "https://backend-superlearner-1083661745884.us-central1.run.app",  
     "https://front-as-sl-1083661745884.southamerica-west1.run.app",  
-
 ]
 
-CORS_ALLOW_CREDENTIALS = True 
+# Configuración adicional de CORS para producción
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
+CORS_ALLOWED_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+
+# Configuración para permitir headers específicos que pueda necesitar el frontend
+CORS_EXPOSE_HEADERS = [
+    'content-disposition',
+]
+
 
 CSRF_TRUSTED_ORIGINS = [
     'https://front-as-sl-1083661745884.southamerica-west1.run.app', 
     'https://backend-superlearner-1083661745884.us-central1.run.app'
 ]
+
+# Configuración adicional para producción
+SECURE_CROSS_ORIGIN_OPENER_POLICY = None
+SECURE_REFERRER_POLICY = "same-origin"
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
