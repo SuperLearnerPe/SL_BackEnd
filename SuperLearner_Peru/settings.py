@@ -183,23 +183,21 @@ SWAGGER_SETTINGS = {
         }
     },
     'USE_SESSION_AUTH': False,
-    'LOGIN_URL': None,
-    'LOGOUT_URL': None,
-    'SESSION_COOKIE_NAME': '',
-    'CSRF_COOKIE_NAME': '',
     'SECURITY_REQUIREMENTS': [{'Token': []}],
-    'JSON_EDITOR': True,
     'SUPPORTED_SUBMIT_METHODS': ['get', 'post', 'put', 'delete', 'patch'],
+    'DEFAULT_MODEL_RENDERING': 'model',
     'OPERATIONS_SORTER': 'alpha',
     'TAGS_SORTER': 'alpha',
     'DOC_EXPANSION': 'none',
     'DEEP_LINKING': True,
     'SHOW_EXTENSIONS': True,
-    'DEFAULT_MODEL_RENDERING': 'model',
     'VALIDATOR_URL': None,
     'CACHE_TIMEOUT': 0,
-    'SPEC_URL': None,
+    'DEFAULT_API_URL': 'https://backend-superlearner-1083661745884.us-central1.run.app/api',
+    'SPEC_URL': '/?format=openapi',
 }
+
+
 
 # ----------- DRF CONFIGURATION -----------
 REST_FRAMEWORK = {
