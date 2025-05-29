@@ -106,19 +106,15 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:8000",
     "http://localhost:8080",
-    "http://127.0.0.1:5501",
-    "http://127.0.0.1:5500",
+    "http://127.0.0.1:8080",
+    "http://127.0.0.1:8000",
     "http://127.0.0.1:3000",
     "http://localhost:3000",
-    "http://192.168.56.1:3000",
-    "http://192.168.0.103:3000",
-    "http://172.22.0.1:3000",
-    "http://0.0.0.0:8000",
     "https://backend-superlearner-1083661745884.us-central1.run.app",
     "https://front-as-sl-1083661745884.southamerica-west1.run.app",
 ]
 
-CORS_URLS_REGEX = r'^/(api|swagger|redoc)/.*$'
+CORS_URLS_REGEX = r'^/(api|swagger|redoc|volunteers|students|parents|metricas)/.*$'
 
 CORS_ALLOWED_HEADERS = [
     'accept',
@@ -153,6 +149,7 @@ CORS_PREFLIGHT_MAX_AGE = 86400
 
 # ----------- CSRF CONFIGURATION -----------
 CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:8080',
     'https://front-as-sl-1083661745884.southamerica-west1.run.app',
     'https://backend-superlearner-1083661745884.us-central1.run.app',
 ]
@@ -193,8 +190,13 @@ SWAGGER_SETTINGS = {
     'SHOW_EXTENSIONS': True,
     'VALIDATOR_URL': None,
     'CACHE_TIMEOUT': 0,
-    'DEFAULT_API_URL': 'https://backend-superlearner-1083661745884.us-central1.run.app/api',
-    'SPEC_URL': '/?format=openapi',
+}
+
+# Configuración automática de protocolo basada en DEBUG
+USE_HTTPS = not DEBUG
+
+REDOC_SETTINGS = {
+    'LAZY_RENDERING': False,
 }
 
 

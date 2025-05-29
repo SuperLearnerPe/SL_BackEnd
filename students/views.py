@@ -6,25 +6,58 @@ from api.models import Parents, BirthStudents
 from api.models import Students, Class, StudentClass
 from .serializers import StudentSerializer, StudentDetailsSerializer, StudentPartialUpdateSerializer,StudentCourseInfoSerializer
 from django.db.models import Prefetch
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 
 class StudentsViewSet(viewsets.ViewSet):
     
-    
+    @swagger_auto_schema(
+        operation_description="Obtener lista de todos los estudiantes",
+        responses={
+            200: openapi.Response(
+                description="Lista de estudiantes obtenida exitosamente",
+                schema=StudentDetailsSerializer(many=True)
+            ),
+            500: openapi.Response(description="Error interno del servidor")
+        },
+        tags=['Students']
+    )
     @action(detail=False, methods=["GET"], url_path="get")
     def list_students(self, request):
-
         students = Students.objects.all().order_by('-id').select_related('parent').prefetch_related(
             'studentclass_set__id_class',  
             Prefetch('birthstudents_set', queryset=BirthStudents.objects.all(), to_attr='birth_prefetched')
         )
         
-        # Sin paginación, todos los estudiantes a la vez
         serializer = StudentDetailsSerializer(students, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @swagger_auto_schema(
+        operation_description="Crear un nuevo estudiante",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'parent_dni': openapi.Schema(type=openapi.TYPE_STRING, description="DNI del padre"),
+                'name': openapi.Schema(type=openapi.TYPE_STRING, description="Nombre del estudiante"),
+                'last_name': openapi.Schema(type=openapi.TYPE_STRING, description="Apellido del estudiante"),
+                'gender': openapi.Schema(type=openapi.TYPE_STRING, description="Género"),
+                'birth_info': openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'city': openapi.Schema(type=openapi.TYPE_STRING),
+                        'country': openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            }
+        ),
+        responses={
+            201: openapi.Response(description="Estudiante creado exitosamente"),
+            400: openapi.Response(description="Datos inválidos")
+        },
+        tags=['Students']
+    )
     @action(detail=False, methods=["POST"], url_path="create")
     def create_student(self, request):
-
         parent_dni = request.data.get("parent_dni")
         if not parent_dni:
             return Response(
@@ -71,6 +104,18 @@ class StudentsViewSet(viewsets.ViewSet):
             status=status.HTTP_201_CREATED
         )
     
+    @swagger_auto_schema(
+        operation_description="Obtener estudiante por ID",
+        manual_parameters=[
+            openapi.Parameter('student_id', openapi.IN_QUERY, description="ID del estudiante", type=openapi.TYPE_INTEGER, required=True)
+        ],
+        responses={
+            200: openapi.Response(description="Estudiante encontrado", schema=StudentDetailsSerializer()),
+            400: openapi.Response(description="Parámetro student_id requerido"),
+            404: openapi.Response(description="Estudiante no encontrado")
+        },
+        tags=['Students']
+    )
     @action(detail=False, methods=["GET"], url_path="get-id")
     def retrieve_student(self, request):
         student_id = request.query_params.get("student_id")
@@ -80,7 +125,6 @@ class StudentsViewSet(viewsets.ViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         try:
-
             student = Students.objects.filter(pk=student_id).select_related('parent').prefetch_related(
                 'studentclass_set__id_class',  
                 Prefetch('birthstudents_set', queryset=BirthStudents.objects.all(), to_attr='birth_prefetched')
@@ -94,7 +138,26 @@ class StudentsViewSet(viewsets.ViewSet):
         except Students.DoesNotExist:
             raise NotFound(detail="Estudiante no encontrado.", code=404)
 
-
+    @swagger_auto_schema(
+        operation_description="Actualizar información básica de un estudiante",
+        manual_parameters=[
+            openapi.Parameter('student_id', openapi.IN_QUERY, description="ID del estudiante", type=openapi.TYPE_INTEGER, required=True)
+        ],
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'name': openapi.Schema(type=openapi.TYPE_STRING, description="Nombre del estudiante"),
+                'last_name': openapi.Schema(type=openapi.TYPE_STRING, description="Apellido del estudiante"),
+                'gender': openapi.Schema(type=openapi.TYPE_STRING, description="Género")
+            }
+        ),
+        responses={
+            200: openapi.Response(description="Estudiante actualizado exitosamente"),
+            400: openapi.Response(description="Datos inválidos"),
+            404: openapi.Response(description="Estudiante no encontrado")
+        },
+        tags=['Students']
+    )
     @action(detail=False, methods=["PUT"], url_path="update")
     def update_student_info(self, request):
         student_id = request.query_params.get("student_id")
@@ -108,14 +171,12 @@ class StudentsViewSet(viewsets.ViewSet):
         except Students.DoesNotExist:
             raise NotFound(detail="Estudiante no encontrado.", code=404)
 
-        # Serializer para actualizar solo name, last_name y gender
         serializer = StudentPartialUpdateSerializer(
             student,
             data=request.data,
-            partial=True  # Permite actualización parcial
+            partial=True
         )
 
-        # Validar y guardar los datos
         serializer.is_valid(raise_exception=True)
         serializer.save()
 
@@ -124,7 +185,18 @@ class StudentsViewSet(viewsets.ViewSet):
             status=status.HTTP_200_OK
         )
 
-
+    @swagger_auto_schema(
+        operation_description="Activar/Desactivar un estudiante",
+        manual_parameters=[
+            openapi.Parameter('student_id', openapi.IN_QUERY, description="ID del estudiante", type=openapi.TYPE_INTEGER, required=True)
+        ],
+        responses={
+            200: openapi.Response(description="Estado del estudiante cambiado exitosamente"),
+            400: openapi.Response(description="Parámetro student_id requerido"),
+            404: openapi.Response(description="Estudiante no encontrado")
+        },
+        tags=['Students']
+    )
     @action(detail=False, methods=["PUT"], url_path="toggle-status")
     def toggle_student_status(self, request):
         student_id = request.query_params.get("student_id")
@@ -138,7 +210,6 @@ class StudentsViewSet(viewsets.ViewSet):
         except Students.DoesNotExist:
             raise NotFound(detail="Estudiante no encontrado.", code=404)
 
-        # Si el estudiante está activo (status 1) lo desactiva; de lo contrario, lo activa.
         if student.status == 1:
             student.status = 0
             message = "Estudiante desactivado."
@@ -146,11 +217,32 @@ class StudentsViewSet(viewsets.ViewSet):
             student.status = 1
             message = "Estudiante activado."
         
-        # Guardar el cambio de estado directamente en la base de datos
         student.save()
         
         return Response({"detail": message}, status=status.HTTP_200_OK)
 
+    @swagger_auto_schema(
+        operation_description="Asignar cursos a un estudiante",
+        manual_parameters=[
+            openapi.Parameter('student_id', openapi.IN_QUERY, description="ID del estudiante", type=openapi.TYPE_INTEGER, required=True)
+        ],
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'class_id': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(type=openapi.TYPE_INTEGER),
+                    description="Lista de IDs de cursos a asignar"
+                )
+            }
+        ),
+        responses={
+            200: openapi.Response(description="Cursos asignados exitosamente"),
+            400: openapi.Response(description="Datos inválidos"),
+            404: openapi.Response(description="Estudiante no encontrado")
+        },
+        tags=['Students']
+    )
     @action(detail=False, methods=["POST"], url_path="assign-courses")
     def assign_courses(self, request):
         student_id = request.query_params.get("student_id")
@@ -176,7 +268,6 @@ class StudentsViewSet(viewsets.ViewSet):
         for course_id in class_id:
             try:
                 course = Class.objects.get(pk=course_id)
-                # Crea la relación si no existe
                 _, created = StudentClass.objects.get_or_create(
                     id_student=student,
                     id_class=course
@@ -197,6 +288,28 @@ class StudentsViewSet(viewsets.ViewSet):
             status=status.HTTP_200_OK
         )
 
+    @swagger_auto_schema(
+        operation_description="Remover cursos de un estudiante",
+        manual_parameters=[
+            openapi.Parameter('student_id', openapi.IN_QUERY, description="ID del estudiante", type=openapi.TYPE_INTEGER, required=True)
+        ],
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'class_id': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(type=openapi.TYPE_INTEGER),
+                    description="Lista de IDs de cursos a remover"
+                )
+            }
+        ),
+        responses={
+            200: openapi.Response(description="Cursos removidos exitosamente"),
+            400: openapi.Response(description="Datos inválidos"),
+            404: openapi.Response(description="Estudiante no encontrado")
+        },
+        tags=['Students']
+    )
     @action(detail=False, methods=["POST"], url_path="remove-courses")
     def remove_courses(self, request):
         student_id = request.query_params.get("student_id")
@@ -227,7 +340,7 @@ class StudentsViewSet(viewsets.ViewSet):
                     {"error": f"El curso con ID {course_id} no existe."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            # Elimina la relación si existe
+            
             deleted, _ = StudentClass.objects.filter(
                 id_student=student, 
                 id_class=course
@@ -243,6 +356,31 @@ class StudentsViewSet(viewsets.ViewSet):
             status=status.HTTP_200_OK
         )
 
+    @swagger_auto_schema(
+        operation_description="Mover estudiante de unos cursos a otros",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'student_id': openapi.Schema(type=openapi.TYPE_INTEGER, description="ID del estudiante"),
+                'old_class_id': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(type=openapi.TYPE_INTEGER),
+                    description="Lista de IDs de cursos actuales"
+                ),
+                'new_class_id': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(type=openapi.TYPE_INTEGER),
+                    description="Lista de IDs de cursos nuevos"
+                )
+            }
+        ),
+        responses={
+            200: openapi.Response(description="Cursos movidos exitosamente"),
+            400: openapi.Response(description="Datos inválidos"),
+            404: openapi.Response(description="Estudiante no encontrado")
+        },
+        tags=['Students']
+    )
     @action(detail=False, methods=["POST"], url_path="move-courses")
     def move_courses(self, request):
         student_id = request.data.get('student_id')
@@ -308,17 +446,41 @@ class StudentsViewSet(viewsets.ViewSet):
             status=status.HTTP_200_OK
         )
     
-
+    @swagger_auto_schema(
+        operation_description="Obtener información de cursos de todos los estudiantes",
+        responses={
+            200: openapi.Response(
+                description="Información de cursos obtenida exitosamente",
+                schema=StudentCourseInfoSerializer(many=True)
+            ),
+            500: openapi.Response(description="Error interno del servidor")
+        },
+        tags=['Students']
+    )
     @action(detail=False, methods=["GET"], url_path="all-students-courses-info")
     def get_all_students_courses_info(self, request):
-        # Utiliza prefetch_related para cargar todas las relaciones StudentClass y Class de una vez
         students = Students.objects.all().prefetch_related(
-            'studentclass_set__id_class'  # Carga clases en una sola consulta
+            'studentclass_set__id_class'
         ).order_by('-id')
         
         serializer = StudentCourseInfoSerializer(students, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
     
+    @swagger_auto_schema(
+        operation_description="Obtener información de cursos de un estudiante específico",
+        manual_parameters=[
+            openapi.Parameter('student_id', openapi.IN_QUERY, description="ID del estudiante", type=openapi.TYPE_INTEGER, required=True)
+        ],
+        responses={
+            200: openapi.Response(
+                description="Información de cursos del estudiante obtenida exitosamente",
+                schema=StudentCourseInfoSerializer()
+            ),
+            400: openapi.Response(description="Parámetro student_id requerido"),
+            404: openapi.Response(description="Estudiante no encontrado")
+        },
+        tags=['Students']
+    )
     @action(detail=False, methods=["GET"], url_path="student-courses-info")
     def get_student_courses_info(self, request):
         student_id = request.query_params.get("student_id")

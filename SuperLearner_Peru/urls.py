@@ -16,73 +16,32 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from rest_framework.routers import DefaultRouter
-from api.views import UserViewSet, ClassViewSset, StudentsViewset, SupportViewset
+from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
-from rest_framework import permissions
 
-# Importar ViewSets del módulo métricas
-from metricas.views import ImpactoViewSet, GestionViewSet
-
-# Configuración del esquema de API simplificada
 schema_view = get_schema_view(
-    openapi.Info(
-        title="SuperLearner Peru API",
-        default_version='v1',
-        description="""
-## API del Sistema SuperLearner Peru
+   openapi.Info(
+      title="SuperLearner Peru API",
+      default_version='v1',
+      description="API Documentation for SuperLearner Peru System",
+      terms_of_service="https://www.google.com/policies/terms/",
+      contact=openapi.Contact(email="admin@superlearner.pe"),
+      license=openapi.License(name="MIT License"),
+   ),
+   public=True,
+   permission_classes=(permissions.AllowAny,),
 
-Esta API proporciona acceso completo al sistema de gestión educativa SuperLearner Peru.
-
-### 🔐 Autenticación
-**IMPORTANTE**: Todos los endpoints requieren autenticación mediante token.
-
-**Pasos para autenticarse:**
-1. Obtén tu token usando el endpoint `/api/user/login/`
-2. Haz clic en el botón "🔒 Authorize" arriba
-3. En el campo "Value" escribe: `Token <tu_token_aqui>`
-4. Haz clic en "Authorize"
-5. ¡Listo! Ahora puedes usar todos los endpoints
-
-### 📋 Endpoints Principales
-- **🔐 Autenticación**: Login y registro de usuarios
-- **👤 Usuario**: Información de perfil de usuario
-- **📚 Cursos**: Gestión de clases y cursos
-- **👥 Estudiantes**: Gestión de estudiantes y asistencia
-- **🛠️ Soporte**: Sistema de soporte técnico
-- **📊 Métricas**: Generación de reportes Excel
-        """,
-        contact=openapi.Contact(name="Soporte SuperLearner Peru", email="soporte@superlearner.pe"),
-        license=openapi.License(name="Privado"),
-    ),
-    public=True,
-    permission_classes=[permissions.AllowAny],
-    authentication_classes=[],
-    url="https://backend-superlearner-1083661745884.us-central1.run.app/api",
 )
-
-# Configuración del router principal
-router = DefaultRouter()
-router.register(r'user', UserViewSet, basename='user')
-router.register(r'class', ClassViewSset, basename='class')  
-router.register(r'student', StudentsViewset, basename='student')
-router.register(r'support', SupportViewset, basename='support')
-
-# Registrar ViewSets del módulo métricas
-router.register(r'metricas/impacto', ImpactoViewSet, basename='metricas-impacto')
-router.register(r'metricas/gestion', GestionViewSet, basename='metricas-gestion')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    
-    # API endpoints
-    path('api/', include(router.urls)),
-    
-    # Documentación Swagger únicamente
-    path('swagger.json', schema_view.without_ui(cache_timeout=0), name='schema-json'),
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
-    
-    # Endpoint principal redirige a Swagger
-    path('', schema_view.with_ui('swagger', cache_timeout=0), name='api-docs'),
+    path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
+    path('api/',include('api.urls')),
+    path('api/',include('students.urls')),
+    path('api/',include('parents.urls')),
+    path('volunteers/',include('volunteers.urls')),
+    path('metricas/', include('metricas.urls')),
+    path('', include('frontend.urls')),
 ]

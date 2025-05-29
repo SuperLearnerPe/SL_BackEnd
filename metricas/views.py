@@ -352,44 +352,41 @@ class GestionViewSet(viewsets.ViewSet):
         return response
 
 class MetricasViewSet(viewsets.ViewSet):
+    
     @swagger_auto_schema(
-        operation_description="Dashboard principal con resumen de métricas"
+        operation_description="Obtener métricas del sistema",
+        responses={
+            200: openapi.Response(
+                description="Métricas obtenidas exitosamente"
+            ),
+            500: openapi.Response(description="Error interno del servidor")
+        },
+        tags=['Metricas']
     )
-    @action(detail=False, methods=["GET"], url_path="dashboard")
-    def dashboard(self, request):
-        # Recopilar métricas principales para el dashboard
-        tasa_asistencia = ImpactoService.calcular_tasa_asistencia("mes")
-        clases_asistencia = ImpactoService.asistencia_por_clase("mes")[:5]  # Top 5 clases
-        alumnos_regulares = ImpactoService.alumnos_asistencia_regular("mes", 0.5)
-        alumnos_irregulares = GestionService.alumnos_asistencia_irregular("mes", 0.25)
-        dias_asistencia = ImpactoService.dia_mayor_asistencia("mes")
-        
-        # Obtener alumnos inactivos (más de 30 días)
-        alumnos_inactivos = GestionService.alumnos_inactivos(30)
-        
-        # Construir respuesta para el dashboard
-        dashboard_data = {
-            "asistencia": {
-                "tasa_mensual": tasa_asistencia.get("tasa_asistencia", 0),
-                "total_asistencias": tasa_asistencia.get("total_asistencias", 0),
-                "total_sesiones": tasa_asistencia.get("total_sesiones", 0)
-            },
-            "clases_destacadas": clases_asistencia,
-            "alumnos": {
-                "regulares": {
-                    "porcentaje": alumnos_regulares.get("porcentaje_alumnos_regulares", 0),
-                    "total": alumnos_regulares.get("total_alumnos_regulares", 0)
-                },
-                "irregulares": {
-                    "porcentaje": alumnos_irregulares.get("porcentaje", 0),
-                    "total": alumnos_irregulares.get("total_alumnos_irregulares", 0)
-                },
-                "inactivos": {
-                    "total": alumnos_inactivos.get("total_alumnos_inactivos", 0)
-                }
-            },
-            "dias_asistencia": dias_asistencia.get("asistencias_por_dia", {}),
-            "dia_mayor_asistencia": dias_asistencia.get("dia_mayor_asistencia", "")
-        }
-        
-        return Response(dashboard_data, status=status.HTTP_200_OK)
+    @action(detail=False, methods=['GET'], url_path='get_metrics')
+    def get_metrics(self, request):
+        """Obtener métricas del sistema"""
+        try:
+            # Your implementation here
+            return Response({"message": "Métricas del sistema"}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @swagger_auto_schema(
+        operation_description="Obtener estadísticas de usuarios",
+        responses={
+            200: openapi.Response(
+                description="Estadísticas obtenidas exitosamente"
+            ),
+            500: openapi.Response(description="Error interno del servidor")
+        },
+        tags=['Metricas']
+    )
+    @action(detail=False, methods=['GET'], url_path='user_stats')
+    def user_stats(self, request):
+        """Obtener estadísticas de usuarios"""
+        try:
+            # Your implementation here
+            return Response({"message": "Estadísticas de usuarios"}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
