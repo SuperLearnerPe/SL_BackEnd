@@ -255,26 +255,75 @@ class GestionViewSet(viewsets.ViewSet):
             )
         },
         tags=['Gestión de Asistencia - Excel']
-    )
+    )    
     @action(detail=False, methods=["GET"], url_path="excel")
     def excel_gestion(self, request):
-        filtros = {
-            'tipo': request.query_params.get('tipo', 'completo'),
-            'fecha': request.query_params.get('fecha'),
-            'fecha_inicio': request.query_params.get('fecha_inicio'),
-            'mes': request.query_params.get('mes'),
-            'anio': request.query_params.get('anio'),
-            'clase_id': request.query_params.get('clase_id')
-        }
+        # Extraer parámetros individuales
+        tipo = request.query_params.get('tipo', 'completo')
+        fecha = request.query_params.get('fecha')
+        fecha_inicio = request.query_params.get('fecha_inicio')
+        mes = request.query_params.get('mes')
+        anio = request.query_params.get('anio')
+        clase_id = request.query_params.get('clase_id')
+        
+        # Convertir fecha_inicio a objeto date si se proporciona
+        fecha_inicio_obj = None
+        if fecha_inicio:
+            try:
+                fecha_inicio_obj = datetime.strptime(fecha_inicio, '%Y-%m-%d').date()
+            except ValueError:
+                return Response(
+                    {"error": "Formato de fecha_inicio inválido. Use YYYY-MM-DD"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
+        # Convertir mes y anio a enteros si se proporcionan
+        mes_int = None
+        anio_int = None
+        if mes:
+            try:
+                mes_int = int(mes)
+            except ValueError:
+                return Response(
+                    {"error": "El mes debe ser un número entero entre 1 y 12"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
+        if anio:
+            try:
+                anio_int = int(anio)
+            except ValueError:
+                return Response(
+                    {"error": "El año debe ser un número entero"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
+        # Convertir clase_id a entero si se proporciona
+        clase_id_int = None
+        if clase_id:
+            try:
+                clase_id_int = int(clase_id)
+            except ValueError:
+                return Response(
+                    {"error": "El clase_id debe ser un número entero"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         
         try:
-            excel_data = ExcelService.generar_excel_gestion(filtros)
+            # Llamar al servicio con parámetros individuales
+            excel_data = ExcelService.generar_excel_gestion(
+                fecha=fecha,
+                fecha_inicio=fecha_inicio_obj,
+                mes=mes_int,
+                anio=anio_int,
+                clase_id=clase_id_int
+            )
             
             response = HttpResponse(
                 excel_data,
                 content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             )
-            response['Content-Disposition'] = f'attachment; filename="gestion_asistencia_{filtros["tipo"]}_{datetime.now().strftime("%Y%m%d")}.xlsx"'
+            response['Content-Disposition'] = f'attachment; filename="gestion_asistencia_{tipo}_{datetime.now().strftime("%Y%m%d")}.xlsx"'
             return response
             
         except Exception as e:

@@ -324,14 +324,18 @@ class ExcelService:
         - Alumnos con más de 30 faltas seguidas
         """
         output = io.BytesIO()
-        writer = pd.ExcelWriter(output, engine='xlsxwriter')
-        
-        # 1. LISTA DE ASISTENCIA DIARIA (si se especifica fecha)
+        writer = pd.ExcelWriter(output, engine='xlsxwriter')        # 1. LISTA DE ASISTENCIA DIARIA (si se especifica fecha)
         if fecha:
             try:
-                fecha_obj = datetime.strptime(str(fecha), '%Y-%m-%d').date()
+                # Convertir string a objeto date si es necesario
+                if isinstance(fecha, str):
+                    fecha_obj = datetime.strptime(fecha, '%Y-%m-%d').date()
+                elif isinstance(fecha, date):
+                    fecha_obj = fecha
+                else:
+                    raise ValueError(f"Tipo de fecha no válido: {type(fecha)}")
                 
-                query_filter = {'id_session__date': fecha_obj}
+                query_filter = {'id_session__date__date': fecha_obj}
                 if clase_id:
                     query_filter['id_session__id_class__id'] = clase_id
                 
@@ -355,9 +359,16 @@ class ExcelService:
                 
                 df_diario = pd.DataFrame(datos_diarios)
                 df_diario.to_excel(writer, sheet_name='Lista Asistencia Diaria', index=False)
+                
             except Exception as e:
-                df_diario = pd.DataFrame({'Mensaje': [f'Error con fecha: {str(e)}']})
-                df_diario.to_excel(writer, sheet_name='Lista Asistencia Diaria', index=False)
+                # Crear hoja con información del error para debugging
+                df_error = pd.DataFrame({
+                    'Error': [f'Error al procesar fecha: {str(e)}'],
+                    'Fecha recibida': [str(fecha)],
+                    'Tipo de fecha': [str(type(fecha))],
+                    'Mensaje': ['Verifique que la fecha esté en formato YYYY-MM-DD']
+                })
+                df_error.to_excel(writer, sheet_name='Lista Asistencia Diaria', index=False)
         
         # 2. LISTA DE ASISTENCIA SEMANAL (con estatus)
         if fecha_inicio:

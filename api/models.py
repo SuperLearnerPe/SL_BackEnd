@@ -241,7 +241,7 @@ class Students(models.Model):
         
 class Session(models.Model):
     id_session = models.BigAutoField(primary_key=True)
-    id_class = models.ForeignKey('Class', on_delete=models.CASCADE, db_column='id_class')
+    id_class = models.ForeignKey(Class, on_delete=models.CASCADE, db_column='id_class')
     date = models.DateTimeField(null=True, blank=True)
     num_session = models.IntegerField(null=True, blank=True) 
 

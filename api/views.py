@@ -11,9 +11,10 @@ from rest_framework.decorators import action
 from django.utils import timezone
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
-from .models import  Class ,Volunteers ,VolunteerClass ,Students , AttendanceStudent, Session , AuthUserRoles
+from .models import  Class ,Volunteers ,VolunteerClass ,Students , AttendanceStudent, Session , AuthUserRoles, AuthUser
 from django.core.mail import send_mail
-from django.db import transaction
+from django.db import transaction, connection
+
 
 # Esquemas reutilizables para Swagger
 def get_auth_header():
@@ -510,29 +511,44 @@ class StudentsViewset(ViewSet):
     @action(detail=False, methods=['POST'], url_path='create_session')
     def create_session(self, request, *args, **kwargs):
         try:
-            logged_in_user = request.user
+            # 1) Tomo el User de Django desde request.user
+            django_user = request.user
 
-            # Consultar los roles del usuario
-            user_roles = AuthUserRoles.objects.filter(user=logged_in_user).select_related('role')
+            # 2) Traduzco ese User de Django a mi modelo AuthUser (la tabla real auth_user)
+            try:
+                auth_user = AuthUser.objects.get(username=django_user.username)
+            except AuthUser.DoesNotExist:
+                return Response(
+                    {"error": "No se encontró el AuthUser correspondiente a este usuario."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
 
-            # Verificar si el usuario tiene el rol de admin o profesor
+            # 3) Ahora consulto roles usando AuthUserRoles; esto funciona porque AuthUserRoles.user apunta al modelo User de Django
+            user_roles = AuthUserRoles.objects.filter(user=django_user).select_related('role')
             is_volunteer = user_roles.filter(role__name='Volunteers_Profesor').exists()
-            is_admin = user_roles.filter(role__name='admin').exists()
+            is_admin     = user_roles.filter(role__name='admin').exists()
 
             if not (is_volunteer or is_admin):
-                return Response({'error': 'No tienes permisos para realizar esta acción'}, status=status.HTTP_403_FORBIDDEN)
+                return Response(
+                    {'error': 'No tienes permisos para realizar esta acción.'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
 
-            # Obtener la clase por su ID
+            # 4) Validar que me pasen id_class en el body
             class_id = request.data.get('id_class')
             if not class_id:
-                return Response({'error': 'ID de la clase no proporcionado'}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {'error': 'ID de la clase no proporcionado.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
+            # 5) Obtener la clase; si no existe, 404
             try:
                 course_class = Class.objects.get(id=class_id)
             except Class.DoesNotExist:
-                return Response({'error': 'Clase no encontrada'}, status=status.HTTP_404_NOT_FOUND)
+                return Response({'error': 'Clase no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
 
-            # Verificar si hay estudiantes asociados a esta clase ANTES de crear la sesión
+            # 6) Verificar que al menos haya 1 estudiante en esa clase
             student_count = Students.objects.filter(studentclass__id_class=course_class.id).count()
             if student_count == 0:
                 return Response({
@@ -540,88 +556,74 @@ class StudentsViewset(ViewSet):
                     'status': 'EMPTY_CLASS'
                 }, status=status.HTTP_400_BAD_REQUEST)
 
-            volunteer = None  # Inicializar voluntario como None
-
+            # 7) Determinar qué voluntario crea la sesión:
+            volunteer = None
             if is_volunteer:
-                # Verificar si el usuario es un voluntario asociado a esta clase
+                # Como Volunteers.user es FK a AuthUser, le paso auth_user
                 try:
-                    volunteer = Volunteers.objects.get(user=logged_in_user)
+                    volunteer = Volunteers.objects.get(user=auth_user)
                 except Volunteers.DoesNotExist:
-                    return Response({'error': 'El usuario no es un profesor'}, status=status.HTTP_403_FORBIDDEN)
+                    return Response({'error': 'El usuario no es un profesor.'}, status=status.HTTP_403_FORBIDDEN)
 
+                # Confirmar que ese voluntario está asignado a la clase
                 if not VolunteerClass.objects.filter(id_class=course_class.id, id_volunteer=volunteer.id).exists():
-                    return Response({'error': 'No tienes permiso para crear sesiones en esta clase.'}, status=status.HTTP_403_FORBIDDEN)
+                    return Response(
+                        {'error': 'No tienes permiso para crear sesiones en esta clase.'},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
 
-            elif is_admin:
-                # Si el usuario es admin, buscar el primer voluntario asociado al curso
-                volunteer_class = VolunteerClass.objects.filter(id_class=course_class.id).select_related('id_volunteer').first()
-                if not volunteer_class:
-                    return Response({'error': 'No se encontraron voluntarios asociados a esta clase'}, status=status.HTTP_404_NOT_FOUND)
-                volunteer = volunteer_class.id_volunteer
+            else:
+                # Si es admin, tomo el primer voluntario que esté asignado a esa clase
+                vc = VolunteerClass.objects.filter(id_class=course_class.id).select_related('id_volunteer').first()
+                if not vc:
+                    return Response(
+                        {'error': 'No se encontraron voluntarios asociados a esta clase.'},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+                volunteer = vc.id_volunteer
 
-            # CÓDIGO CORREGIDO - Obtener el último número de sesión para la clase
-            try:
-                from django.db import models
-                last_session_data = Session.objects.filter(id_class=course_class).aggregate(
-                    max_session=models.Max('num_session')
+            # 8) Calcular el próximo num_session usando SQL RAW para evitar que ORM lo traduzca mal
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT MAX(num_session) FROM sessions WHERE id_class = %s",
+                    [course_class.id]
                 )
-                max_num_session = last_session_data['max_session'] or 0
-                num_session = max_num_session + 1
-            except Exception as e:
-                # Si hay error, empezar desde 1
-                num_session = 1
+                result = cursor.fetchone()[0]
+                num_session = (result + 1) if result else 1
 
-            # Usar transacción para garantizar atomicidad
+            # 9) Crear la sesión y los registros de asistencia dentro de una transacción atómica
             with transaction.atomic():
-                # Crear una nueva sesión
                 session = Session.objects.create(
                     id_class=course_class,
                     num_session=num_session,
                     date=timezone.now(),
                 )
 
-                # Obtener estudiantes asociados a la clase
                 students = Students.objects.filter(studentclass__id_class=course_class.id)
-                
-                # Crear registros de asistencia para cada estudiante (con asistencia en blanco)
                 attendance_records = []
-                failed_students = []
-                
                 for student in students:
-                    try:
-                        attendance_records.append(
-                            AttendanceStudent(
-                                id_student=student,
-                                id_volunteer=volunteer,
-                                id_session=session,
-                                created_date=timezone.now(),
-                                attendance=""  
-                            )
+                    attendance_records.append(
+                        AttendanceStudent(
+                            id_student=student,
+                            id_volunteer=volunteer,
+                            id_session=session,
+                            created_date=timezone.now(),
+                            attendance=""  
                         )
-                    except Exception as e:
-                        failed_students.append({"id": student.id, "error": str(e)})
-                
-                # Guardar todas las asistencias en batch para mejor rendimiento
+                    )
                 if attendance_records:
                     AttendanceStudent.objects.bulk_create(attendance_records)
 
-                # Serializar la sesión creada
                 serializer = SessionSerializer(session)
-                
-                response_data = {
-                    'message': 'Sesión creada con éxito y asistencia registrada en blanco',
+                return Response({
+                    'message': 'Sesión creada con éxito y asistencia registrada en blanco.',
                     'session': serializer.data,
                     'student_count': student_count
-                }
-                
-                # Incluir información sobre errores si los hay
-                if failed_students:
-                    response_data['warning'] = 'Algunos estudiantes no pudieron ser registrados'
-                    response_data['failed_students'] = failed_students
-
-                return Response(response_data, status=status.HTTP_201_CREATED)
+                }, status=status.HTTP_201_CREATED)
 
         except Exception as e:
+            # Si ocurre algún error inesperado, devuelvo 400 con el mensaje
+            print(f"Error en create_session: {str(e)}")
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
@@ -799,7 +801,7 @@ class StudentsViewset(ViewSet):
             if not class_id:
                 return Response({"detail": "El ID de la clase es requerido."}, status=status.HTTP_400_BAD_REQUEST)
 
-            # Obtener las sesiones asociadas a esa clase
+            # CORREGIDO: Usar el nombre correcto del campo
             sessions = Session.objects.filter(id_class=class_id).values('id_session', 'num_session', 'date')
 
             if not sessions:
@@ -810,7 +812,7 @@ class StudentsViewset(ViewSet):
                 {
                     "id_session": session['id_session'],
                     "num_session": session['num_session'],
-                    "date": session['date']
+                    "date": session['date'].strftime('%Y-%m-%d') if session['date'] else None
                 }
                 for session in sessions
             ]
@@ -820,6 +822,7 @@ class StudentsViewset(ViewSet):
             }, status=status.HTTP_200_OK)
 
         except Exception as e:
+            print(f"Error en get_sessions_class: {str(e)}")  # Para debugging
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
 class SupportViewset(ViewSet):
