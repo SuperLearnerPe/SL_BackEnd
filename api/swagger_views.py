@@ -2,14 +2,12 @@
 from django.views.decorators.cache import never_cache
 from django.utils.decorators import method_decorator
 
-
 @method_decorator(never_cache, name='dispatch')
 class CustomSwaggerView:
-    """Vista personalizada para Swagger que fuerza solo Token auth"""
+    """Vista personalizada para Swagger con Token auth únicamente"""
     
     @staticmethod
     def get_swagger_schema():
-        """Generar schema personalizado sin Basic Auth"""
         return {
             "swagger": "2.0",
             "info": {
