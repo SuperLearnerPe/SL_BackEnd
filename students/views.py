@@ -14,7 +14,7 @@ class StudentsViewSet(viewsets.ViewSet):
     @swagger_auto_schema(
         operation_description="Obtener lista de todos los estudiantes",
         responses={200: StudentDetailsSerializer(many=True), 500: "Error interno"},
-        tags=['Students']
+        tags=['📚 Gestión de Estudiantes']
     )
     @action(detail=False, methods=["GET"], url_path="get")
     def list_students(self, request):
@@ -45,7 +45,7 @@ class StudentsViewSet(viewsets.ViewSet):
             }
         ),
         responses={201: "Estudiante creado", 400: "Datos inválidos"},
-        tags=['Students']
+        tags=['📚 Gestión de Estudiantes']
     )
     @action(detail=False, methods=["POST"], url_path="create")
     def create_student(self, request):
@@ -101,7 +101,7 @@ class StudentsViewSet(viewsets.ViewSet):
             openapi.Parameter('student_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
         ],
         responses={200: StudentDetailsSerializer(), 400: "Parámetro requerido", 404: "No encontrado"},
-        tags=['Students']
+        tags=['📚 Gestión de Estudiantes']
     )
     @action(detail=False, methods=["GET"], url_path="get-id")
     def retrieve_student(self, request):
@@ -139,7 +139,7 @@ class StudentsViewSet(viewsets.ViewSet):
             }
         ),
         responses={200: "Estudiante actualizado", 400: "Datos inválidos", 404: "No encontrado"},
-        tags=['Students']
+        tags=['📚 Gestión de Estudiantes']
     )
     @action(detail=False, methods=["PUT"], url_path="update")
     def update_student_info(self, request):
@@ -174,7 +174,7 @@ class StudentsViewSet(viewsets.ViewSet):
             openapi.Parameter('student_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
         ],
         responses={200: "Estado cambiado", 400: "Parámetro requerido", 404: "No encontrado"},
-        tags=['Students']
+        tags=['📚 Gestión de Estudiantes']
     )
     @action(detail=False, methods=["PUT"], url_path="toggle-status")
     def toggle_student_status(self, request):
@@ -216,7 +216,7 @@ class StudentsViewSet(viewsets.ViewSet):
             }
         ),
         responses={200: "Cursos asignados", 400: "Datos inválidos", 404: "No encontrado"},
-        tags=['Students']
+        tags=['📚 Gestión de Estudiantes']
     )
     @action(detail=False, methods=["POST"], url_path="assign-courses")
     def assign_courses(self, request):
@@ -272,7 +272,7 @@ class StudentsViewSet(viewsets.ViewSet):
             }
         ),
         responses={200: "Cursos removidos", 400: "Datos inválidos", 404: "No encontrado"},
-        tags=['Students']
+        tags=['📚 Gestión de Estudiantes']
     )
     @action(detail=False, methods=["POST"], url_path="remove-courses")
     def remove_courses(self, request):
@@ -326,7 +326,7 @@ class StudentsViewSet(viewsets.ViewSet):
             }
         ),
         responses={200: "Cursos movidos", 400: "Datos inválidos", 404: "No encontrado"},
-        tags=['Students']
+        tags=['📚 Gestión de Estudiantes']
     )
     @action(detail=False, methods=["POST"], url_path="move-courses")
     def move_courses(self, request):
@@ -374,7 +374,7 @@ class StudentsViewSet(viewsets.ViewSet):
     @swagger_auto_schema(
         operation_description="Obtener información de cursos de todos los estudiantes",
         responses={200: StudentCourseInfoSerializer(many=True), 500: "Error interno"},
-        tags=['Students']
+        tags=['📚 Gestión de Estudiantes']
     )
     @action(detail=False, methods=["GET"], url_path="all-students-courses-info")
     def get_all_students_courses_info(self, request):
@@ -391,7 +391,7 @@ class StudentsViewSet(viewsets.ViewSet):
             openapi.Parameter('student_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
         ],
         responses={200: StudentCourseInfoSerializer(), 400: "Parámetro requerido", 404: "No encontrado"},
-        tags=['Students']
+        tags=['📚 Gestión de Estudiantes']
     )
     @action(detail=False, methods=["GET"], url_path="student-courses-info")
     def get_student_courses_info(self, request):

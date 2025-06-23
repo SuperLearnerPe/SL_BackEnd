@@ -3,9 +3,9 @@ from rest_framework.routers import DefaultRouter
 from .views import MetricasViewSet, ImpactoViewSet, GestionViewSet
 
 router = DefaultRouter()
-router.register(r'metricas', MetricasViewSet, basename='metricas')
-router.register(r'impacto', ImpactoViewSet, basename='impacto')
-router.register(r'gestion', GestionViewSet, basename='gestion')
+router.register(r'general', MetricasViewSet, basename='metricas-general')
+router.register(r'impact', ImpactoViewSet, basename='metricas-impacto')
+router.register(r'management', GestionViewSet, basename='metricas-gestion')
 
 urlpatterns = [
     path('', include(router.urls)),

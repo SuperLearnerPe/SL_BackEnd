@@ -16,7 +16,7 @@ class ImpactoViewSet(viewsets.ViewSet):
             openapi.Parameter('periodo', openapi.IN_QUERY, type=openapi.TYPE_STRING, default='mes'),
             openapi.Parameter('clase_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER)
         ],
-        tags=['Métricas de Impacto']
+        tags=['📊 Métricas de Impacto']
     )    
     @action(detail=False, methods=["GET"], url_path="tasa-asistencia")
     def tasa_asistencia(self, request):
@@ -37,7 +37,7 @@ class ImpactoViewSet(viewsets.ViewSet):
         manual_parameters=[
             openapi.Parameter('periodo', openapi.IN_QUERY, type=openapi.TYPE_STRING, default='mes')
         ],
-        tags=['Métricas de Impacto']
+        tags=['📊 Métricas de Impacto']
     )    
     @action(detail=False, methods=["GET"], url_path="asistencia-por-clase")
     def asistencia_por_clase(self, request):
@@ -51,7 +51,7 @@ class ImpactoViewSet(viewsets.ViewSet):
             openapi.Parameter('periodo', openapi.IN_QUERY, type=openapi.TYPE_STRING, default='mes'),
             openapi.Parameter('umbral', openapi.IN_QUERY, type=openapi.TYPE_NUMBER, default=0.5)
         ],
-        tags=['Métricas de Impacto']
+        tags=['📊 Métricas de Impacto']
     )    
     @action(detail=False, methods=["GET"], url_path="alumnos-asistencia-regular")
     def alumnos_asistencia_regular(self, request):
@@ -65,7 +65,7 @@ class ImpactoViewSet(viewsets.ViewSet):
         manual_parameters=[
             openapi.Parameter('periodo', openapi.IN_QUERY, type=openapi.TYPE_STRING, default='mes')
         ],
-        tags=['Métricas de Impacto']
+        tags=['📊 Métricas de Impacto']
     )    
     @action(detail=False, methods=["GET"], url_path="frecuencia-asistencia")
     def frecuencia_asistencia(self, request):
@@ -78,7 +78,7 @@ class ImpactoViewSet(viewsets.ViewSet):
         manual_parameters=[
             openapi.Parameter('meses', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, default=6)
         ],
-        tags=['Métricas de Impacto']
+        tags=['📊 Métricas de Impacto']
     )    
     @action(detail=False, methods=["GET"], url_path="retencion-alumnos")
     def retencion_alumnos(self, request):
@@ -91,7 +91,7 @@ class ImpactoViewSet(viewsets.ViewSet):
         manual_parameters=[
             openapi.Parameter('periodo', openapi.IN_QUERY, type=openapi.TYPE_STRING, default='mes')
         ],
-        tags=['Métricas de Impacto']
+        tags=['📊 Métricas de Impacto']
     )    
     @action(detail=False, methods=["GET"], url_path="dia-mayor-asistencia")
     def dia_mayor_asistencia(self, request):
@@ -104,7 +104,7 @@ class ImpactoViewSet(viewsets.ViewSet):
         manual_parameters=[
             openapi.Parameter('periodo', openapi.IN_QUERY, type=openapi.TYPE_STRING, default='mes')
         ],
-        tags=['Métricas de Impacto']
+        tags=['📊 Métricas de Impacto']
     )    
     @action(detail=False, methods=["GET"], url_path="promedio-sesiones")
     def promedio_sesiones(self, request):
@@ -124,7 +124,7 @@ class ImpactoViewSet(viewsets.ViewSet):
                 content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         },
-        tags=['Métricas de Impacto - Excel']
+        tags=['📊 Métricas de Impacto - Excel']
     )
     @action(detail=False, methods=["GET"], url_path="excel")
     def excel_impacto(self, request):
@@ -154,7 +154,7 @@ class GestionViewSet(viewsets.ViewSet):
             openapi.Parameter('fecha', openapi.IN_QUERY, type=openapi.TYPE_STRING),
             openapi.Parameter('clase_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER)
         ],
-        tags=['Gestión de Asistencia']
+        tags=['📋 Gestión de Asistencia']
     )    
     @action(detail=False, methods=["GET"], url_path="asistencia-diaria")
     def asistencia_diaria(self, request):
@@ -169,7 +169,7 @@ class GestionViewSet(viewsets.ViewSet):
             openapi.Parameter('fecha_inicio', openapi.IN_QUERY, type=openapi.TYPE_STRING),
             openapi.Parameter('clase_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER)
         ],
-        tags=['Gestión de Asistencia']
+        tags=['📋 Gestión de Asistencia']
     )    
     @action(detail=False, methods=["GET"], url_path="asistencia-semanal")
     def asistencia_semanal(self, request):
@@ -185,7 +185,7 @@ class GestionViewSet(viewsets.ViewSet):
             openapi.Parameter('anio', openapi.IN_QUERY, type=openapi.TYPE_INTEGER),
             openapi.Parameter('clase_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER)
         ],
-        tags=['Gestión de Asistencia']
+        tags=['📋 Gestión de Asistencia']
     )    
     @action(detail=False, methods=["GET"], url_path="asistencia-mensual")
     def asistencia_mensual(self, request):
@@ -201,7 +201,7 @@ class GestionViewSet(viewsets.ViewSet):
             openapi.Parameter('periodo', openapi.IN_QUERY, type=openapi.TYPE_STRING, default='mes'),
             openapi.Parameter('umbral', openapi.IN_QUERY, type=openapi.TYPE_NUMBER, default=0.25)
         ],
-        tags=['Gestión de Asistencia']
+        tags=['📋 Gestión de Asistencia']
     )    
     @action(detail=False, methods=["GET"], url_path="asistencia-irregular")
     def asistencia_irregular(self, request):
@@ -216,7 +216,7 @@ class GestionViewSet(viewsets.ViewSet):
             openapi.Parameter('criterio', openapi.IN_QUERY, type=openapi.TYPE_STRING, default='sexo'),
             openapi.Parameter('periodo', openapi.IN_QUERY, type=openapi.TYPE_STRING, default='mes')
         ],
-        tags=['Gestión de Asistencia']
+        tags=['📋 Gestión de Asistencia']
     )    
     @action(detail=False, methods=["GET"], url_path="grupos-asistencia")
     def grupos_asistencia(self, request):
@@ -230,7 +230,7 @@ class GestionViewSet(viewsets.ViewSet):
         manual_parameters=[
             openapi.Parameter('dias', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, default=30)
         ],
-        tags=['Gestión de Asistencia']
+        tags=['📋 Gestión de Asistencia']
     )
     @action(detail=False, methods=["GET"], url_path="alumnos-inactivos")
     def alumnos_inactivos(self, request):
@@ -254,7 +254,7 @@ class GestionViewSet(viewsets.ViewSet):
                 content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         },
-        tags=['Gestión de Asistencia - Excel']
+        tags=['📋 Gestión de Asistencia - Excel']
     )    
     @action(detail=False, methods=["GET"], url_path="excel")
     def excel_gestion(self, request):
@@ -337,7 +337,7 @@ class MetricasViewSet(viewsets.ViewSet):
     @swagger_auto_schema(
         operation_description="Obtener métricas del sistema",
         responses={200: "Métricas obtenidas", 500: "Error interno"},
-        tags=['Métricas Generales']
+        tags=['📈 Métricas Generales']
     )
     @action(detail=False, methods=['GET'], url_path='get_metrics')
     def get_metrics(self, request):
@@ -350,7 +350,7 @@ class MetricasViewSet(viewsets.ViewSet):
     @swagger_auto_schema(
         operation_description="Obtener estadísticas de usuarios",
         responses={200: "Estadísticas obtenidas", 500: "Error interno"},
-        tags=['Métricas Generales']
+        tags=['📈 Métricas Generales']
     )
     @action(detail=False, methods=['GET'], url_path='user_stats')
     def user_stats(self, request):
