@@ -12,7 +12,6 @@ ENV/
 # --- Archivos de entorno / configuración sensible ---
 .env
 *.env
-.env.*
 
 # --- Django ---
 db.sqlite3
