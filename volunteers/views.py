@@ -1,3 +1,4 @@
+import logging
 from django.core.mail import send_mail
 from rest_framework.viewsets import ViewSet
 from rest_framework.response import Response
@@ -14,6 +15,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.authtoken.models import Token
 
 class VolunteersViewSet(ViewSet):
+    logger = logging.getLogger(__name__)
     
     @action(detail=False, methods=['GET'], url_path='Get_Volunteers')
     def Get_Volunteers(self, request):
@@ -89,22 +91,37 @@ class VolunteersViewSet(ViewSet):
         else:
             valid_courses = None
     
-        personal_email = volunteer_data.get('personal_email') 
-        subject = 'Bienvenido a SuperLearner'
-        message = f'Hola {user_data["first_name"]},\n\nTu cuenta ha sido creada con éxito. Estos son tus datos de acceso:\n\nUsuario: {user_data["username"]}\nCorreo Institucional: {user_data["email"]}\nContraseña: {user_data["password"]}\n\nGracias por registrarte.'
-        send_mail(
-            subject,
-            message,
-            'admin@superlearner.org',  
-            [personal_email],  
-            fail_silently=False,
-        )
+        personal_email = volunteer_data.get('personal_email')
+        email_status = {"sent": False, "message": "No se proporcionó correo personal."}
+        if personal_email:
+            subject = 'Bienvenido a SuperLearner'
+            message = (
+                f'Hola {user_data["first_name"]},\n\n'
+                'Tu cuenta ha sido creada con éxito. Estos son tus datos de acceso:\n\n'
+                f'Usuario: {user_data["username"]}\n'
+                f'Correo Institucional: {user_data["email"]}\n'
+                f'Contraseña: {user_data["password"]}\n\n'
+                'Gracias por registrarte.'
+            )
+            try:
+                send_mail(
+                    subject,
+                    message,
+                    'admin@superlearner.org',
+                    [personal_email],
+                    fail_silently=False,
+                )
+                email_status = {"sent": True, "message": f'Correo enviado a {personal_email}.'}
+            except Exception as exc:
+                self.logger.error("Error enviando correo de bienvenida: %s", exc)
+                email_status = {"sent": False, "message": f'No se pudo enviar correo a {personal_email}.'}
 
         return Response({
             'user': user_serializer.data,
             'volunteer': volunteer_serializer.data,
-            'courses': valid_courses, 
-            'token': token.key
+            'courses': valid_courses,
+            'token': token.key,
+            'email_status': email_status
         }, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=['PUT'], url_path='update_volunteer')
@@ -127,9 +144,15 @@ class VolunteersViewSet(ViewSet):
             return Response({"error": "El voluntario no existe."}, status=status.HTTP_404_NOT_FOUND)
 
         try:
-            # Obtener el usuario basado en el `user_id`
-            user = AuthUser.objects.get(id=user_id)
+            # Obtener el usuario basado en el `user_id` usando el modelo reflejado
+            auth_user = AuthUser.objects.get(id=user_id)
         except AuthUser.DoesNotExist:
+            return Response({"error": "El usuario no existe."}, status=status.HTTP_404_NOT_FOUND)
+
+        UserModel = get_user_model()
+        try:
+            django_user = UserModel.objects.get(id=user_id)
+        except UserModel.DoesNotExist:
             return Response({"error": "El usuario no existe."}, status=status.HTTP_404_NOT_FOUND)
 
         # Actualizar el email del usuario si se proporciona en user_data
@@ -137,11 +160,13 @@ class VolunteersViewSet(ViewSet):
             # Verificar que el nuevo email no esté ya en uso por otro usuario
             if AuthUser.objects.filter(email=user_data['email']).exclude(id=user_id).exists():
                 return Response({"error": "El email ya está en uso por otro usuario."}, status=status.HTTP_400_BAD_REQUEST)
-            user.email = user_data['email']
-            user.save(update_fields=['email'])
+            auth_user.email = user_data['email']
+            auth_user.save(update_fields=['email'])
+            django_user.email = user_data['email']
+            django_user.save(update_fields=['email'])
 
         # Serializar los datos del usuario para actualizarlos
-        user_serializer = UserAuthSerializer(user, data=user_data, partial=True)  # Partial permite actualizar campos individuales
+        user_serializer = UserAuthSerializer(auth_user, data=user_data, partial=True)  # Partial permite actualizar campos individuales
         if not user_serializer.is_valid():
             return Response(user_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -152,10 +177,29 @@ class VolunteersViewSet(ViewSet):
         # Actualizar los datos del usuario
         user_serializer.save()
 
+        # Mantener sincronizado el usuario de Django con los datos actualizados
+        fields_to_sync = []
+        for field in ['username', 'first_name', 'last_name']:
+            if field in user_data:
+                setattr(django_user, field, user_data[field])
+                fields_to_sync.append(field)
+        if 'password' in user_data:
+            django_user.password = user_data['password']
+            fields_to_sync.append('password')
+        if fields_to_sync:
+            django_user.save(update_fields=list(set(fields_to_sync)))
+
         # Extraer role_id antes de la serialización
         role_id = None
         if volunteer_data and 'role' in volunteer_data:
-            role_id = volunteer_data.pop('role', None)
+            raw_role_id = volunteer_data.pop('role', None)
+            if raw_role_id in (None, '', 'null', 'None'):
+                role_id = None
+            else:
+                try:
+                    role_id = int(raw_role_id)
+                except (ValueError, TypeError):
+                    return Response({"error": "El ID del rol debe ser un número entero válido."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Serializar los datos del voluntario para actualizarlos (si hay datos)
         if volunteer_data:
@@ -170,16 +214,12 @@ class VolunteersViewSet(ViewSet):
         # Procesar el rol si se proporcionó
         if role_id is not None:
             try:
-                # Asegurarse de que role_id sea un entero
-                role_id = int(role_id)
                 auth_role = AuthRole.objects.get(id=role_id)
                 # Crea o actualiza el rol del usuario en AuthUserRoles
-                AuthUserRoles.objects.update_or_create(user=user, defaults={'role': auth_role})
-            except (ValueError, TypeError):
-                return Response({"error": "El ID del rol debe ser un número entero válido."}, status=status.HTTP_400_BAD_REQUEST)
+                AuthUserRoles.objects.update_or_create(user=django_user, defaults={'role': auth_role})
             except AuthRole.DoesNotExist:
                 return Response({"error": f"El rol con id {role_id} no existe."}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         # Si el rol es Profesor (2), se actualizan o crean las relaciones con cursos
         if role_id == 2:
             if course_ids:

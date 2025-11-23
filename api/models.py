@@ -18,7 +18,7 @@ class AttendanceStudent(models.Model):
  
     
     class Meta:
-        managed = False
+        managed = True
         db_table = 'attendance_student'
 
 class AuthGroup(models.Model):
@@ -54,13 +54,13 @@ class AuthPermission(models.Model):
 class AuthUser(models.Model):
     password = models.CharField(max_length=128)
     last_login = models.DateTimeField(blank=True, null=True)
-    is_superuser = models.IntegerField()
+    is_superuser = models.BooleanField()
     username = models.CharField(unique=True, max_length=150)
     first_name = models.CharField(max_length=150)
     last_name = models.CharField(max_length=150)
     email = models.CharField(max_length=254)
-    is_staff = models.IntegerField()
-    is_active = models.IntegerField()
+    is_staff = models.BooleanField()
+    is_active = models.BooleanField()
     date_joined = models.DateTimeField()
     
 
@@ -236,7 +236,7 @@ class Students(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'students'
         
 class Session(models.Model):
@@ -246,6 +246,7 @@ class Session(models.Model):
     num_session = models.IntegerField(null=True, blank=True) 
 
     class Meta:
+        managed = True
         db_table = 'sessions'
 
 
@@ -277,7 +278,7 @@ class Volunteers(models.Model):
     user = models.ForeignKey(AuthUser,  on_delete=models.CASCADE,  blank=True, null=True)
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'volunteers'
 
 class AuthRole(models.Model):

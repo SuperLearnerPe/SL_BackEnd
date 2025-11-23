@@ -526,8 +526,8 @@ class StudentsViewset(ViewSet):
             # 3) Ahora consulto roles usando AuthUserRoles; esto funciona porque AuthUserRoles.user apunta al modelo User de Django
             user_roles = AuthUserRoles.objects.filter(user=django_user).select_related('role')
             is_volunteer = user_roles.filter(role__name='Volunteers_Profesor').exists()
-            is_admin     = user_roles.filter(role__name='admin').exists()
-
+            is_admin     = user_roles.filter(role__name='Admin').exists()
+            print(is_volunteer, is_admin, user_roles.values_list('role__name', flat=True))
             if not (is_volunteer or is_admin):
                 return Response(
                     {'error': 'No tienes permisos para realizar esta acción.'},
