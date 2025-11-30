@@ -1,3 +1,68 @@
-.venv
-__pycache__
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- Entornos virtuales ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- Archivos de entorno / configuración sensible ---
 .env
+*.env
+
+# --- Django ---
+db.sqlite3
+*.log
+staticfiles/
+media/
+local_settings.py
+
+# --- Migraciones (mantén solo el __init__.py) ---
+*/migrations/*
+!*/migrations/__init__.py
+
+# --- Archivos compilados / temporales ---
+*.pot
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.dll
+
+# --- IDEs y editores ---
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# --- Archivos del sistema operativo ---
+.DS_Store
+Thumbs.db
+
+# --- Tests / coverage ---
+.coverage
+htmlcov/
+.tox/
+.pytest_cache/
+nosetests.xml
+coverage.xml
+
+# --- Archivos de construcción ---
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# --- Docker / contenedores (si aplica) ---
+*.pid
+*.seed
+*.pid.lock
+docker-compose.override.yml
+
+# --- Otros ---
+*.bak
+*.swp
+*.tmp

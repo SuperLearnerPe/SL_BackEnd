@@ -3,23 +3,29 @@
 #   * Rearrange models' order
 #   * Make sure each model has one field with primary_key=True
 #   * Make sure each ForeignKey and OneToOneField has `on_delete` set to the desired behavior
-#   * Remove `managed = False` lines if you wish to allow Django to create, modify, and delete the table
+#   * Remove `managed = True` lines if you wish to allow Django to create, modify, and delete the table
 # Feel free to rename the models, but don't rename db_table values or field names.
+from datetime import timezone
 from django.db import models
 from django.contrib.auth.models import User
+from django.utils import timezone
+
 
 class AttendanceStudent(models.Model):
     id = models.BigAutoField(primary_key=True)
-    id_student = models.ForeignKey('Students', models.CASCADE, db_column='id_student')
-    id_volunteer = models.ForeignKey('Volunteers', models.CASCADE, db_column='id_volunteer')
-    id_session = models.ForeignKey('Session', on_delete=models.CASCADE, db_column='id_session')
+    id_student = models.ForeignKey(
+        'Students', models.CASCADE, db_column='id_student')
+    id_volunteer = models.ForeignKey(
+        'Volunteers', models.CASCADE, db_column='id_volunteer')
+    id_session = models.ForeignKey(
+        'Session', on_delete=models.CASCADE, db_column='id_session')
     created_date = models.DateTimeField(blank=True, null=True)
     attendance = models.CharField(max_length=11, blank=True, null=True)
- 
-    
+
     class Meta:
         managed = True
         db_table = 'attendance_student'
+
 
 class AuthGroup(models.Model):
     name = models.CharField(unique=True, max_length=150)
@@ -54,15 +60,14 @@ class AuthPermission(models.Model):
 class AuthUser(models.Model):
     password = models.CharField(max_length=128)
     last_login = models.DateTimeField(blank=True, null=True)
-    is_superuser = models.BooleanField()
     username = models.CharField(unique=True, max_length=150)
     first_name = models.CharField(max_length=150)
     last_name = models.CharField(max_length=150)
     email = models.CharField(max_length=254)
-    is_staff = models.BooleanField()
-    is_active = models.BooleanField()
-    date_joined = models.DateTimeField()
-    
+    date_joined = models.DateTimeField(default=timezone.now)
+    is_superuser = models.BooleanField(default=False)
+    is_staff = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)    
 
     class Meta:
         managed = False
@@ -105,25 +110,28 @@ class AuthtokenToken(models.Model):
 
 
 class BirthParents(models.Model):
-    id = models.BigAutoField(primary_key=True, db_comment='Unique identifier for birth_parents')
-    id_parent = models.ForeignKey('Parents', models.DO_NOTHING, db_column='id_parent', blank=True, null=True, db_comment='Uniquer')
+    id = models.BigAutoField(
+        primary_key=True, db_comment='Unique identifier for birth_parents')
+    id_parent = models.ForeignKey(
+        'Parents', models.DO_NOTHING, db_column='id_parent', blank=True, null=True, db_comment='Uniquer')
     city = models.CharField(max_length=255, blank=True, null=True)
     state_department = models.CharField(max_length=255, blank=True, null=True)
     country = models.CharField(max_length=255, blank=True, null=True)
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'birth_parents'
 
 
 class BirthStudents(models.Model):
     id = models.BigAutoField(primary_key=True)
-    id_student = models.ForeignKey('Students', models.DO_NOTHING, db_column='id_student', blank=True, null=True)
+    id_student = models.ForeignKey(
+        'Students', models.DO_NOTHING, db_column='id_student', blank=True, null=True)
     city = models.CharField(max_length=255, blank=True, null=True)
     country = models.CharField(max_length=255, blank=True, null=True)
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'birth_students'
 
 
@@ -140,7 +148,7 @@ class Class(models.Model):
     updated_at = models.DateTimeField(blank=True, null=True)
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'class'
 
 
@@ -150,7 +158,8 @@ class DjangoAdminLog(models.Model):
     object_repr = models.CharField(max_length=200)
     action_flag = models.PositiveSmallIntegerField()
     change_message = models.TextField()
-    content_type = models.ForeignKey('DjangoContentType', models.DO_NOTHING, blank=True, null=True)
+    content_type = models.ForeignKey(
+        'DjangoContentType', models.DO_NOTHING, blank=True, null=True)
     user = models.ForeignKey(AuthUser, models.DO_NOTHING)
 
     class Meta:
@@ -190,24 +199,39 @@ class DjangoSession(models.Model):
 
 
 class Parents(models.Model):
-    id = models.BigAutoField(primary_key=True, db_comment='Unique identifier for the parents')
-    name = models.CharField(max_length=255, blank=True, null=True, db_comment='Names of the parent')
-    last_name = models.CharField(max_length=255, blank=True, null=True, db_comment='Last names of the parent')
-    email = models.CharField(unique=True, max_length=255, blank=True, null=True, db_comment='Email of the parent')
-    phone = models.CharField(unique=True, max_length=255, blank=True, null=True, db_comment='Phone number of the parent including the country calling code')
-    address = models.CharField(max_length=255, blank=True, null=True, db_comment='Current residential address of the parent')
-    city = models.CharField(max_length=255, blank=True, null=True, db_comment='Current city of the parent')
-    country = models.CharField(max_length=255, blank=True, null=True, db_comment='Current country of the parent')
-    nationality = models.CharField(max_length=255, blank=True, null=True, db_comment='Current nationality of the parent')
-    document_type = models.CharField(max_length=255, blank=True, null=True, db_comment='Type of national identification document of the parent')
-    document_id = models.CharField(unique=True, max_length=255, blank=True, null=True, db_comment='Identification number of the national identification document of the parent')
-    birthdate = models.DateField(blank=True, null=True, db_comment='Date of birth of the parent')
-    gender = models.CharField(max_length=50, blank=True, null=True, db_comment='Gender of the parent')
-    status = models.IntegerField(blank=True, null=True, db_comment='Indicates whether the parent is active or inactive')
+    id = models.BigAutoField(
+        primary_key=True, db_comment='Unique identifier for the parents')
+    name = models.CharField(max_length=255, blank=True,
+                            null=True, db_comment='Names of the parent')
+    last_name = models.CharField(
+        max_length=255, blank=True, null=True, db_comment='Last names of the parent')
+    email = models.CharField(unique=True, max_length=255,
+                             blank=True, null=True, db_comment='Email of the parent')
+    phone = models.CharField(unique=True, max_length=255, blank=True, null=True,
+                             db_comment='Phone number of the parent including the country calling code')
+    address = models.CharField(max_length=255, blank=True, null=True,
+                               db_comment='Current residential address of the parent')
+    city = models.CharField(max_length=255, blank=True,
+                            null=True, db_comment='Current city of the parent')
+    country = models.CharField(
+        max_length=255, blank=True, null=True, db_comment='Current country of the parent')
+    nationality = models.CharField(
+        max_length=255, blank=True, null=True, db_comment='Current nationality of the parent')
+    document_type = models.CharField(max_length=255, blank=True, null=True,
+                                     db_comment='Type of national identification document of the parent')
+    document_id = models.CharField(unique=True, max_length=255, blank=True, null=True,
+                                   db_comment='Identification number of the national identification document of the parent')
+    birthdate = models.DateField(
+        blank=True, null=True, db_comment='Date of birth of the parent')
+    gender = models.CharField(
+        max_length=50, blank=True, null=True, db_comment='Gender of the parent')
+    status = models.IntegerField(
+        blank=True, null=True, db_comment='Indicates whether the parent is active or inactive')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
     class Meta:
-        managed = False
+        managed = True
         db_table = 'parents'
         db_table_comment = 'This table store basic information of the parent'
 
@@ -215,20 +239,24 @@ class Parents(models.Model):
 class StudentClass(models.Model):
     id = models.BigAutoField(primary_key=True)
     id_class = models.ForeignKey(Class, models.CASCADE, db_column='id_class')
-    id_student = models.ForeignKey('Students', models.CASCADE, db_column='id_student')
-    
+    id_student = models.ForeignKey(
+        'Students', models.CASCADE, db_column='id_student')
+
     class Meta:
-        managed = False
+        managed = True
         db_table = 'student_class'
+
 
 class Students(models.Model):
     id = models.BigAutoField(primary_key=True)
     name = models.CharField(max_length=255, blank=True, null=True)
     last_name = models.CharField(max_length=255, blank=True, null=True)
-    parent = models.ForeignKey(Parents, models.DO_NOTHING, blank=True, null=True)
+    parent = models.ForeignKey(
+        Parents, models.DO_NOTHING, blank=True, null=True)
     nationality = models.CharField(max_length=255, blank=True, null=True)
     document_type = models.CharField(max_length=255, blank=True, null=True)
-    document_id = models.CharField(unique=True, max_length=255, blank=True, null=True)
+    document_id = models.CharField(
+        unique=True, max_length=255, blank=True, null=True)
     birthdate = models.DateField(blank=True, null=True)
     gender = models.CharField(max_length=50, blank=True, null=True)
     status = models.IntegerField(blank=True, null=True)
@@ -238,12 +266,14 @@ class Students(models.Model):
     class Meta:
         managed = True
         db_table = 'students'
-        
+
+
 class Session(models.Model):
     id_session = models.BigAutoField(primary_key=True)
-    id_class = models.ForeignKey(Class, on_delete=models.CASCADE, db_column='id_class')
+    id_class = models.ForeignKey(
+        Class, on_delete=models.CASCADE, db_column='id_class')
     date = models.DateTimeField(null=True, blank=True)
-    num_session = models.IntegerField(null=True, blank=True) 
+    num_session = models.IntegerField(null=True, blank=True)
 
     class Meta:
         managed = True
@@ -253,50 +283,59 @@ class Session(models.Model):
 class VolunteerClass(models.Model):
     id = models.BigAutoField(primary_key=True)
     id_class = models.ForeignKey(Class, models.CASCADE, db_column='id_class')
-    id_volunteer = models.ForeignKey('Volunteers', models.CASCADE, db_column='id_volunteer')
-    
+    id_volunteer = models.ForeignKey(
+        'Volunteers', models.CASCADE, db_column='id_volunteer')
+
     class Meta:
-        managed = False
-        db_table = 'volunteer_class' 
+        managed = True
+        db_table = 'volunteer_class'
 
 
 class Volunteers(models.Model):
     id = models.BigAutoField(primary_key=True)
     name = models.CharField(max_length=255, blank=True, null=True)
     last_name = models.CharField(max_length=255, blank=True, null=True)
-    personal_email = models.CharField(unique=True, max_length=255, blank=True, null=True)
-    phone = models.CharField(unique=True, max_length=255, blank=True, null=True)
-    photo = models.CharField(max_length=255, blank=True, null=True )
+    personal_email = models.CharField(
+        unique=True, max_length=255, blank=True, null=True)
+    phone = models.CharField(
+        unique=True, max_length=255, blank=True, null=True)
+    photo = models.CharField(max_length=255, blank=True, null=True)
     nationality = models.CharField(max_length=255, blank=True, null=True)
     document_type = models.CharField(max_length=255, blank=True, null=True)
-    document_id = models.CharField(unique=True, max_length=255, blank=True, null=True)
+    document_id = models.CharField(
+        unique=True, max_length=255, blank=True, null=True)
     birthdate = models.DateField(blank=True, null=True)
     gender = models.CharField(max_length=50, blank=True, null=True)
     status = models.IntegerField(blank=True, null=True)
-    created_at = models.DateTimeField(blank=True, null=True, auto_now=True )
+    created_at = models.DateTimeField(blank=True, null=True, auto_now=True)
     updated_at = models.DateTimeField(blank=True, null=True, auto_now=True)
-    user = models.ForeignKey(AuthUser,  on_delete=models.CASCADE,  blank=True, null=True)
+    user = models.ForeignKey(
+        AuthUser,  on_delete=models.CASCADE,  blank=True, null=True)
 
     class Meta:
         managed = True
         db_table = 'volunteers'
 
+
 class AuthRole(models.Model):
-    
+
     id = models.BigAutoField(primary_key=True)
     name = models.CharField(max_length=50, unique=True)
     description = models.CharField(max_length=255, blank=True, null=True)
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'auth_role'
-        
+
 
 class AuthUserRoles(models.Model):
-    id = models.BigAutoField(primary_key=True)  # Para BIGINT NOT NULL AUTO_INCREMENT
-    user = models.ForeignKey(User, on_delete=models.CASCADE)  # user_id como clave foránea
-    role = models.ForeignKey('AuthRole', on_delete=models.CASCADE)  # role_id como clave foránea
+    # Para BIGINT NOT NULL AUTO_INCREMENT
+    id = models.BigAutoField(primary_key=True)
+    # user_id como clave foránea
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    # role_id como clave foránea
+    role = models.ForeignKey('AuthRole', on_delete=models.CASCADE)
 
     class Meta:
-        managed = False  # Indica que Django no manejará la creación de la tabla
+        managed = True  # Indica que Django no manejará la creación de la tabla
         db_table = 'auth_user_roles'  # Nombre de la tabla

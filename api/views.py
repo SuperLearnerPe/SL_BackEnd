@@ -50,8 +50,8 @@ class UserViewSet(ViewSet):
             type=openapi.TYPE_OBJECT,
             required=['email', 'password'],
             properties={
-                'email': openapi.Schema(type=openapi.TYPE_STRING, example='usuario@ejemplo.com'),
-                'password': openapi.Schema(type=openapi.TYPE_STRING, example='miPassword123'),
+                'email': openapi.Schema(type=openapi.TYPE_STRING, example='admin@slperu.com'),
+                'password': openapi.Schema(type=openapi.TYPE_STRING, example='adminslperu'),
             },
         ),
         responses={200: "Login exitoso", 400: COMMON_RESPONSES[400], 403: COMMON_RESPONSES[403], 404: COMMON_RESPONSES[404]},
@@ -174,17 +174,144 @@ class ClassViewSset(ViewSet):
     permission_classes = [IsAuthenticated]
     
     @swagger_auto_schema(
-        operation_summary="Obtener cursos",
+        operation_summary="Obtener todos los cursos",
+        responses={200: GetCourses(many=True), 401: COMMON_RESPONSES[401], 403: COMMON_RESPONSES[403]},
+        tags=["📚 Cursos - CRUD"]
+    )
+    @action(detail=False, methods=['GET'], url_path='list')
+    def list_courses(self, request):
+        """Obtener todos los cursos disponibles"""
+        try:
+            courses = Class.objects.all().order_by('-created_at')
+            serializer = GetCourses(courses, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @swagger_auto_schema(
+        operation_summary="Crear nuevo curso",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['name', 'category', 'day', 'start_time', 'end_time'],
+            properties={
+                'name': openapi.Schema(type=openapi.TYPE_STRING, example='Matemáticas Básicas'),
+                'category': openapi.Schema(type=openapi.TYPE_STRING, example='Matemáticas'),
+                'day': openapi.Schema(type=openapi.TYPE_STRING, example='Lunes'),
+                'start_time': openapi.Schema(type=openapi.TYPE_STRING, example='09:00:00'),
+                'end_time': openapi.Schema(type=openapi.TYPE_STRING, example='11:00:00'),
+                'color': openapi.Schema(type=openapi.TYPE_STRING, example='#FF5733'),
+                'status': openapi.Schema(type=openapi.TYPE_INTEGER, example=1)
+            },
+        ),
+        responses={201: CourseSerializer, 400: COMMON_RESPONSES[400], 500: COMMON_RESPONSES[500]},
+        tags=["📚 Cursos - CRUD"]
+    )
+    @action(detail=False, methods=['POST'], url_path='create')
+    def create_course(self, request):
+        """Crear un nuevo curso"""
+        try:
+            serializer = CourseSerializer(data=request.data)
+            if serializer.is_valid():
+                course = serializer.save()
+                return Response(CourseSerializer(course).data, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @swagger_auto_schema(
+        operation_summary="Obtener curso por ID",
+        manual_parameters=[
+            openapi.Parameter('course_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
+        ],
+        responses={200: CourseSerializer, 400: COMMON_RESPONSES[400], 404: COMMON_RESPONSES[404], 500: COMMON_RESPONSES[500]},
+        tags=["📚 Cursos - CRUD"]
+    )
+    @action(detail=False, methods=['GET'], url_path='get')
+    def get_course(self, request):
+        """Obtener un curso específico por ID"""
+        course_id = request.query_params.get('course_id', None)
+        if not course_id:
+            return Response({"detail": "El ID del curso es requerido."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            course = get_object_or_404(Class, id=course_id)
+            serializer = CourseSerializer(course)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @swagger_auto_schema(
+        operation_summary="Actualizar curso",
+        manual_parameters=[
+            openapi.Parameter('course_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
+        ],
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'name': openapi.Schema(type=openapi.TYPE_STRING, example='Matemáticas Avanzadas'),
+                'category': openapi.Schema(type=openapi.TYPE_STRING, example='Matemáticas'),
+                'day': openapi.Schema(type=openapi.TYPE_STRING, example='Martes'),
+                'start_time': openapi.Schema(type=openapi.TYPE_STRING, example='10:00:00'),
+                'end_time': openapi.Schema(type=openapi.TYPE_STRING, example='12:00:00'),
+                'color': openapi.Schema(type=openapi.TYPE_STRING, example='#00FF00'),
+                'status': openapi.Schema(type=openapi.TYPE_INTEGER, example=1)
+            },
+        ),
+        responses={200: CourseSerializer, 400: COMMON_RESPONSES[400], 404: COMMON_RESPONSES[404], 500: COMMON_RESPONSES[500]},
+        tags=["📚 Cursos - CRUD"]
+    )
+    @action(detail=False, methods=['PUT'], url_path='update')
+    def update_course(self, request):
+        """Actualizar un curso existente"""
+        course_id = request.query_params.get('course_id', None)
+        if not course_id:
+            return Response({"detail": "El ID del curso es requerido."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            course = get_object_or_404(Class, id=course_id)
+            serializer = CourseSerializer(course, data=request.data, partial=True)
+            if serializer.is_valid():
+                course = serializer.save()
+                return Response(CourseSerializer(course).data, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @swagger_auto_schema(
+        operation_summary="Eliminar curso",
+        manual_parameters=[
+            openapi.Parameter('course_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
+        ],
+        responses={200: "Curso eliminado", 400: COMMON_RESPONSES[400], 404: COMMON_RESPONSES[404], 500: COMMON_RESPONSES[500]},
+        tags=["📚 Cursos - CRUD"]
+    )
+    @action(detail=False, methods=['DELETE'], url_path='delete')
+    def delete_course(self, request):
+        """Eliminar un curso"""
+        course_id = request.query_params.get('course_id', None)
+        if not course_id:
+            return Response({"detail": "El ID del curso es requerido."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            course = get_object_or_404(Class, id=course_id)
+            course_name = course.name
+            course.delete()
+            return Response({"detail": f"Curso '{course_name}' eliminado exitosamente."}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @swagger_auto_schema(
+        operation_summary="Obtener cursos por usuario y rol",
         manual_parameters=[
             openapi.Parameter('user_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True),
             openapi.Parameter('role_id', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=True)
         ],
         responses={200: GetCourses(many=True), 400: COMMON_RESPONSES[400], 500: COMMON_RESPONSES[500]},
-        tags=["📚 Cursos"]
+        tags=["📚 Cursos - Filtros"]
     )
     @action(detail=False, methods=['GET'], url_path='get_courses')
     def get_schedules(self, request):
-        # Obtener el ID del usuario desde los parámetros de consulta
+        """Obtener cursos filtrados por usuario y rol"""
         user_id = request.query_params.get('user_id')
         role_id = request.query_params.get('role_id')
     
@@ -220,25 +347,6 @@ class ClassViewSset(ViewSet):
         return Response(course_serializer.data, status=status.HTTP_200_OK)
 
     @swagger_auto_schema(
-        operation_summary="Obtener curso por ID",
-        manual_parameters=[
-            openapi.Parameter('course_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
-        ],
-        responses={200: CourseSerializer, 400: COMMON_RESPONSES[400], 404: COMMON_RESPONSES[404], 500: COMMON_RESPONSES[500]},
-        tags=["📚 Cursos"]
-    )
-    @action(detail=False, methods=['GET'], url_path='get_Courses_id')
-    def get_schedules_id(self, request):
-        course_id = request.query_params.get('course_id', None)
-        if not course_id:
-            return Response({"detail": "El ID del curso es requerido."}, status=status.HTTP_400_BAD_REQUEST)
-
-        course = get_object_or_404(Class.objects, id=course_id)
-        serializer = CourseSerializer(course)
-        return Response(serializer.data, status=status.HTTP_200_OK) 
-    
-    
-    @swagger_auto_schema(
         operation_summary="Actualizar color del curso",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
@@ -249,10 +357,11 @@ class ClassViewSset(ViewSet):
             },
         ),
         responses={200: "Color actualizado", 400: COMMON_RESPONSES[400], 404: COMMON_RESPONSES[404], 500: COMMON_RESPONSES[500]},
-        tags=["📚 Cursos"]
+        tags=["📚 Cursos - Utilidades"]
     )
     @action(detail=False, methods=['POST'], url_path='update_color')
     def update_color(self, request):
+        """Actualizar solo el color de un curso"""
         class_id = request.data.get('class_id')
         color = request.data.get('color')
         

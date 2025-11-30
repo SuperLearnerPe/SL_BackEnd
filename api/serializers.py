@@ -129,10 +129,58 @@ class StudentSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'last_name']
               
 class CourseSerializer(serializers.ModelSerializer):
-
+    # Campos calculados para mejor presentación
+    duration = serializers.SerializerMethodField()
+    schedule_info = serializers.SerializerMethodField()
+    
     class Meta:
         model = Class
-        fields = "__all__"
+        fields = [
+            'id', 'name', 'category', 'day', 'start_time', 'end_time', 
+            'color', 'status', 'created_at', 'updated_at', 'duration', 'schedule_info'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+    
+    def get_duration(self, obj):
+        """Calcula la duración del curso en horas"""
+        if obj.start_time and obj.end_time:
+            start = obj.start_time
+            end = obj.end_time
+            # Calcular diferencia en horas
+            start_minutes = start.hour * 60 + start.minute
+            end_minutes = end.hour * 60 + end.minute
+            duration_minutes = end_minutes - start_minutes
+            return f"{duration_minutes // 60}h {duration_minutes % 60}m"
+        return "No especificado"
+    
+    def get_schedule_info(self, obj):
+        """Información completa del horario"""
+        if obj.start_time and obj.end_time and obj.day:
+            return f"{obj.day} de {obj.start_time} a {obj.end_time}"
+        return "Horario no especificado"
+    
+    def validate(self, data):
+        """Validaciones personalizadas"""
+        # Validar que end_time sea mayor que start_time
+        if 'start_time' in data and 'end_time' in data:
+            if data['start_time'] >= data['end_time']:
+                raise serializers.ValidationError(
+                    "La hora de fin debe ser mayor que la hora de inicio"
+                )
+        
+        # Validar que el nombre sea único por día
+        if 'name' in data and 'day' in data:
+            existing_course = Class.objects.filter(
+                name=data['name'], 
+                day=data['day']
+            ).exclude(id=self.instance.id if self.instance else None)
+            
+            if existing_course.exists():
+                raise serializers.ValidationError(
+                    f"Ya existe un curso con el nombre '{data['name']}' el día {data['day']}"
+                )
+        
+        return data
 
 class AttendanceStatusUpdateSerializer(serializers.ModelSerializer):
     class Meta:
