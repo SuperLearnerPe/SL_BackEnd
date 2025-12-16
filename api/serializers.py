@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import AuthUser, Class, Students, AttendanceStudent, Session, Volunteers, AuthUserRoles
+from .models import AuthUser, Courses, Students, AttendanceStudent, Session, Volunteers, AuthUserRoles
 
 
 def map_attendance_value(value):
@@ -89,7 +89,7 @@ class UserSerializer(serializers.ModelSerializer):
     
 class GetCourses(serializers.ModelSerializer):
     class Meta:
-        model = Class
+        model = Courses
         fields = ["id","category","name","day","start_time","end_time","color","status","created_at","updated_at"]
         
 
@@ -134,7 +134,7 @@ class CourseSerializer(serializers.ModelSerializer):
     schedule_info = serializers.SerializerMethodField()
     
     class Meta:
-        model = Class
+        model = Courses
         fields = [
             'id', 'name', 'category', 'day', 'start_time', 'end_time', 
             'color', 'status', 'created_at', 'updated_at', 'duration', 'schedule_info'

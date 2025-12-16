@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
 from api.models import Parents, BirthStudents  
-from api.models import Students, Class, StudentClass
+from api.models import Students, Courses, StudentCourses
 from .serializers import StudentSerializer, StudentDetailsSerializer, StudentPartialUpdateSerializer,StudentCourseInfoSerializer
 from django.db.models import Prefetch
 from drf_yasg.utils import swagger_auto_schema

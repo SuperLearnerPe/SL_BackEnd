@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 
-from api.models import Students ,Class
+from api.models import Students, Courses
 
 class StudentSerializer(serializers.ModelSerializer): 
 
@@ -86,7 +86,7 @@ class CourseInfoSerializer(serializers.ModelSerializer):
     dia = serializers.CharField(source='day')
 
     class Meta:
-        model = Class
+        model = Courses
         fields = ['id', 'name', 'horario', 'dia']
 
     def get_horario(self, obj):

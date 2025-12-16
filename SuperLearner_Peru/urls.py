@@ -30,5 +30,5 @@ urlpatterns = [
     path('api/',include('students.urls')),
     path('api/',include('parents.urls')),
     path('volunteers/',include('volunteers.urls')),
-    path('metricas/', include('metricas.urls')),
+   #  path('metricas/', include('metricas.urls')),
     path('', include('frontend.urls')),]

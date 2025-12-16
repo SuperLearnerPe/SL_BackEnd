@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from api.models import Volunteers, AuthUser, AuthUserRoles, VolunteerClass
+from api.models import Volunteers, AuthUser, AuthUserRoles, VolunteerCourses
 from django.contrib.auth import get_user_model
 User = get_user_model()
 
