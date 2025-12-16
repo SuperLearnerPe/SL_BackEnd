@@ -10,7 +10,7 @@ from rest_framework.decorators import action
 from django.contrib.auth.hashers import make_password
 from django.utils import timezone
 # from django.contrib.auth.models import User
-from api.models import Volunteers ,AuthUser , AuthRole , AuthUserRoles ,Class ,VolunteerClass
+from api.models import Volunteers ,AuthUser , AuthRole , AuthUserRoles , Courses ,VolunteerCourses
 from django.contrib.auth import get_user_model
 from rest_framework.authtoken.models import Token
 
