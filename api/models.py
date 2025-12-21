@@ -135,7 +135,7 @@ class BirthStudents(models.Model):
         db_table = 'birth_students'
 
 
-class Class(models.Model):
+class Courses(models.Model):
     id = models.BigAutoField(primary_key=True)
     category = models.CharField(max_length=255, blank=True, null=True)
     name = models.CharField(max_length=255, blank=True, null=True)
@@ -149,7 +149,7 @@ class Class(models.Model):
 
     class Meta:
         managed = True
-        db_table = 'class'
+        db_table = 'courses'
 
 
 class DjangoAdminLog(models.Model):
@@ -236,15 +236,16 @@ class Parents(models.Model):
         db_table_comment = 'This table store basic information of the parent'
 
 
-class StudentClass(models.Model):
-    id = models.BigAutoField(primary_key=True)
-    id_class = models.ForeignKey(Class, models.CASCADE, db_column='id_class')
+class StudentCourses(models.Model):
+    id_course = models.ForeignKey(Courses, models.CASCADE, db_column='id_course', related_name='student_enrollments', primary_key=True)
     id_student = models.ForeignKey(
-        'Students', models.CASCADE, db_column='id_student')
+        'Students', models.CASCADE, db_column='id_student', related_name='course_enrollments')
+    created_at = models.DateTimeField(blank=True, null=True)
 
     class Meta:
-        managed = True
-        db_table = 'student_class'
+        managed = False
+        db_table = 'student_courses'
+        unique_together = (('id_course', 'id_student'),)
 
 
 class Students(models.Model):
@@ -271,25 +272,13 @@ class Students(models.Model):
 class Session(models.Model):
     id_session = models.BigAutoField(primary_key=True)
     id_class = models.ForeignKey(
-        Class, on_delete=models.CASCADE, db_column='id_class')
+        Courses, on_delete=models.CASCADE, db_column='id_course')
     date = models.DateTimeField(null=True, blank=True)
     num_session = models.IntegerField(null=True, blank=True)
 
     class Meta:
         managed = True
         db_table = 'sessions'
-
-
-class VolunteerClass(models.Model):
-    id = models.BigAutoField(primary_key=True)
-    id_class = models.ForeignKey(Class, models.CASCADE, db_column='id_class')
-    id_volunteer = models.ForeignKey(
-        'Volunteers', models.CASCADE, db_column='id_volunteer')
-
-    class Meta:
-        managed = True
-        db_table = 'volunteer_class'
-
 
 class Volunteers(models.Model):
     id = models.BigAutoField(primary_key=True)
@@ -316,7 +305,15 @@ class Volunteers(models.Model):
         managed = True
         db_table = 'volunteers'
 
+class VolunteerCourses(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    id_class = models.ForeignKey(Courses, models.CASCADE, db_column='id_course')
+    id_volunteer = models.ForeignKey(
+        Volunteers, models.CASCADE, db_column='id_volunteer')
 
+    class Meta:
+        managed = True
+        db_table = 'volunteer_courses'
 class AuthRole(models.Model):
 
     id = models.BigAutoField(primary_key=True)

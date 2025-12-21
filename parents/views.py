@@ -13,10 +13,9 @@ class ParentsViewSet(viewsets.ViewSet):
     @swagger_auto_schema(
         operation_description="Obtener lista de todos los padres",
         responses={200: ParentDetailsSerializer(many=True), 500: "Error interno"},
-        tags=['👨‍👩‍👧‍👦 Gestión de Padres']
+        tags=['👨‍👩‍👧‍👦 Padres']
     )
-    @action(detail=False, methods=["GET"], url_path="get") 
-    def list_parents(self, request): 
+    def list(self, request): 
         parents = Parents.objects.all().order_by('-id') 
         serializer = ParentDetailsSerializer(parents, many=True) 
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -25,10 +24,9 @@ class ParentsViewSet(viewsets.ViewSet):
         operation_description="Crear un nuevo padre",
         request_body=ParentSerializer,
         responses={201: ParentDetailsSerializer, 400: "Datos inválidos"},
-        tags=['👨‍👩‍👧‍👦 Gestión de Padres']
+        tags=['👨‍👩‍👧‍👦 Padres']
     )
-    @action(detail=False, methods=["POST"], url_path="create")
-    def create_parent(self, request):
+    def create(self, request):
         serializer = ParentSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         parent = serializer.save()
@@ -40,10 +38,9 @@ class ParentsViewSet(viewsets.ViewSet):
             openapi.Parameter('parent_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
         ],
         responses={200: ParentDetailsSerializer, 400: "Parámetro requerido", 404: "No encontrado"},
-        tags=['👨‍👩‍👧‍👦 Gestión de Padres']
+        tags=['👨‍👩‍👧‍👦 Padres']
     )
-    @action(detail=False, methods=["GET"], url_path="get-id")
-    def retrieve_parent(self, request):
+    def retrieve(self, request):
         parent_id = request.query_params.get("parent_id")
         if not parent_id:
             return Response(
@@ -64,10 +61,9 @@ class ParentsViewSet(viewsets.ViewSet):
         ],
         request_body=ParentSerializer,
         responses={200: ParentDetailsSerializer, 400: "Datos inválidos", 404: "No encontrado"},
-        tags=['👨‍👩‍👧‍👦 Gestión de Padres']
+        tags=['👨‍👩‍👧‍👦 Padres']
     )
-    @action(detail=False, methods=["PUT"], url_path="update")
-    def update_parent(self, request):
+    def update(self, request):
         parent_id = request.query_params.get("parent_id")
         if not parent_id:
             return Response(
@@ -89,7 +85,7 @@ class ParentsViewSet(viewsets.ViewSet):
             openapi.Parameter('parent_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
         ],
         responses={200: "Estado cambiado", 400: "Parámetro requerido", 404: "No encontrado"},
-        tags=['👨‍👩‍👧‍👦 Gestión de Padres']
+        tags=['👨‍👩‍👧‍👦 Padres']
     )
     @action(detail=False, methods=["PUT"], url_path="toggle-status")
     def toggle_parent_status(self, request):

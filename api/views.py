@@ -11,7 +11,7 @@ from rest_framework.decorators import action
 from django.utils import timezone
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
-from .models import  Class ,Volunteers ,VolunteerClass ,Students , AttendanceStudent, Session , AuthUserRoles, AuthUser
+from .models import  Courses ,Volunteers, VolunteerCourses ,Students , AttendanceStudent, Session , AuthUserRoles, AuthUser
 from django.core.mail import send_mail
 from django.db import transaction, connection
 
@@ -134,7 +134,7 @@ class UserViewSet(ViewSet):
     @swagger_auto_schema(
         operation_summary="Perfil del usuario",
         responses={200: UserSerializer, 401: COMMON_RESPONSES[401], 403: COMMON_RESPONSES[403]},
-        tags=["👤 Usuario"]
+        tags=["🔐 Autenticación"]
     )
     @action(detail=False, methods=['GET'])
     def profile(self, request):
@@ -142,15 +142,14 @@ class UserViewSet(ViewSet):
         return Response(serializer.data, status=status.HTTP_200_OK)
     
     @swagger_auto_schema(
-        operation_summary="Datos del usuario",
+        operation_summary="Información del usuario",
         manual_parameters=[
             openapi.Parameter('id_user', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
         ],
         responses={200: UserDataSerializer(many=True), 400: COMMON_RESPONSES[400], 404: COMMON_RESPONSES[404], 500: COMMON_RESPONSES[500]},
-        tags=["👤 Usuario"]
+        tags=["🔐 Autenticación"]
     )
-    @action(detail=False, methods=['GET'])
-    def Data_user(self, request):
+    def list(self, request):
         id_user = request.query_params.get('id_user')  # Utiliza query_params para GET requests
         
         if not id_user:
@@ -168,7 +167,7 @@ class UserViewSet(ViewSet):
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
                    
-class ClassViewSset(ViewSet):
+class CoursesViewSet(ViewSet):
     
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
@@ -176,13 +175,13 @@ class ClassViewSset(ViewSet):
     @swagger_auto_schema(
         operation_summary="Obtener todos los cursos",
         responses={200: GetCourses(many=True), 401: COMMON_RESPONSES[401], 403: COMMON_RESPONSES[403]},
-        tags=["📚 Cursos - CRUD"]
+        tags=["📚 Cursos"]
     )
-    @action(detail=False, methods=['GET'], url_path='list')
-    def list_courses(self, request):
-        """Obtener todos los cursos disponibles"""
+    # @action(detail=False, methods=['GET'], url_path='list')
+    def list(self, request):
+        """Obtener todos los cursos disponibles: Incluido estudiantes matriculados"""
         try:
-            courses = Class.objects.all().order_by('-created_at')
+            courses = Courses.objects.all().order_by('-created_at')
             serializer = GetCourses(courses, many=True)
             return Response(serializer.data, status=status.HTTP_200_OK)
         except Exception as e:
@@ -204,10 +203,10 @@ class ClassViewSset(ViewSet):
             },
         ),
         responses={201: CourseSerializer, 400: COMMON_RESPONSES[400], 500: COMMON_RESPONSES[500]},
-        tags=["📚 Cursos - CRUD"]
+        tags=["📚 Cursos"]
     )
-    @action(detail=False, methods=['POST'], url_path='create')
-    def create_course(self, request):
+    # @action(detail=False, methods=['POST'], url_path='create')
+    def create(self, request):
         """Crear un nuevo curso"""
         try:
             serializer = CourseSerializer(data=request.data)
@@ -224,10 +223,9 @@ class ClassViewSset(ViewSet):
             openapi.Parameter('course_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
         ],
         responses={200: CourseSerializer, 400: COMMON_RESPONSES[400], 404: COMMON_RESPONSES[404], 500: COMMON_RESPONSES[500]},
-        tags=["📚 Cursos - CRUD"]
+        tags=["📚 Cursos"]
     )
-    @action(detail=False, methods=['GET'], url_path='get')
-    def get_course(self, request):
+    def retrieve(self, request):
         """Obtener un curso específico por ID"""
         course_id = request.query_params.get('course_id', None)
         if not course_id:
@@ -242,9 +240,6 @@ class ClassViewSset(ViewSet):
 
     @swagger_auto_schema(
         operation_summary="Actualizar curso",
-        manual_parameters=[
-            openapi.Parameter('course_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
-        ],
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
@@ -258,17 +253,15 @@ class ClassViewSset(ViewSet):
             },
         ),
         responses={200: CourseSerializer, 400: COMMON_RESPONSES[400], 404: COMMON_RESPONSES[404], 500: COMMON_RESPONSES[500]},
-        tags=["📚 Cursos - CRUD"]
+        tags=["📚 Cursos"]
     )
-    @action(detail=False, methods=['PUT'], url_path='update')
-    def update_course(self, request):
+    def update(self, request, pk=None):
         """Actualizar un curso existente"""
-        course_id = request.query_params.get('course_id', None)
-        if not course_id:
+        if not pk:
             return Response({"detail": "El ID del curso es requerido."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            course = get_object_or_404(Class, id=course_id)
+            course = get_object_or_404(Class, id=pk)
             serializer = CourseSerializer(course, data=request.data, partial=True)
             if serializer.is_valid():
                 course = serializer.save()
@@ -279,21 +272,16 @@ class ClassViewSset(ViewSet):
 
     @swagger_auto_schema(
         operation_summary="Eliminar curso",
-        manual_parameters=[
-            openapi.Parameter('course_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
-        ],
         responses={200: "Curso eliminado", 400: COMMON_RESPONSES[400], 404: COMMON_RESPONSES[404], 500: COMMON_RESPONSES[500]},
-        tags=["📚 Cursos - CRUD"]
+        tags=["📚 Cursos"]
     )
-    @action(detail=False, methods=['DELETE'], url_path='delete')
-    def delete_course(self, request):
+    def destroy(self, request, pk=None):
         """Eliminar un curso"""
-        course_id = request.query_params.get('course_id', None)
-        if not course_id:
+        if not pk:
             return Response({"detail": "El ID del curso es requerido."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            course = get_object_or_404(Class, id=course_id)
+            course = get_object_or_404(Class, id=pk)
             course_name = course.name
             course.delete()
             return Response({"detail": f"Curso '{course_name}' eliminado exitosamente."}, status=status.HTTP_200_OK)
@@ -307,10 +295,10 @@ class ClassViewSset(ViewSet):
             openapi.Parameter('role_id', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=True)
         ],
         responses={200: GetCourses(many=True), 400: COMMON_RESPONSES[400], 500: COMMON_RESPONSES[500]},
-        tags=["📚 Cursos - Filtros"]
+        tags=["📚 Cursos"]
     )
     @action(detail=False, methods=['GET'], url_path='get_courses')
-    def get_schedules(self, request):
+    def get_courses_by_user_and_role(self, request):
         """Obtener cursos filtrados por usuario y rol"""
         user_id = request.query_params.get('user_id')
         role_id = request.query_params.get('role_id')
@@ -324,20 +312,20 @@ class ClassViewSset(ViewSet):
 
             if is_coordinator:
                 # Si el usuario es coordinador, retornar todos los cursos
-                courses = Class.objects.all()
+                courses = Courses.objects.all()
             else:
                 # Si el usuario no es coordinador, retornar solo los cursos asociados
                 # Obtener el ID del voluntario asociado al usuario
                 volunteer = Volunteers.objects.get(user_id=user_id)
 
                 # Filtrar cursos basados en el ID del voluntario
-                courses = Class.objects.filter(
+                courses = Courses.objects.filter(
                     volunteerclass__id_volunteer=volunteer.id
                 ).distinct()  # Asegúrate de no obtener duplicados
 
         except Volunteers.DoesNotExist:
             # Si el usuario no es un voluntario, no devolver cursos
-            courses = Class.objects.none()
+            courses = Courses.objects.none()
             print("No volunteer found for this user.")
         except Exception as e:
             # Manejar cualquier otra excepción
@@ -357,7 +345,7 @@ class ClassViewSset(ViewSet):
             },
         ),
         responses={200: "Color actualizado", 400: COMMON_RESPONSES[400], 404: COMMON_RESPONSES[404], 500: COMMON_RESPONSES[500]},
-        tags=["📚 Cursos - Utilidades"]
+        tags=["📚 Cursos"]
     )
     @action(detail=False, methods=['POST'], url_path='update_color')
     def update_color(self, request):
@@ -370,7 +358,7 @@ class ClassViewSset(ViewSet):
         
         try:
             # Obtener la clase por ID
-            class_obj = Class.objects.get(id=class_id)
+            class_obj = Courses.objects.get(id=class_id)
             
             # Actualizar el color de la clase
             class_obj.color = color
@@ -378,84 +366,238 @@ class ClassViewSset(ViewSet):
 
             return Response({"detail": "Color updated successfully."}, status=status.HTTP_200_OK)
         
-        except Class.DoesNotExist:
-            return Response({"detail": "Class not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Courses.DoesNotExist:
+            return Response({"detail": "Course not found."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-class StudentsViewset(ViewSet): 
-    
-    authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
-        operation_summary="Obtener todos los estudiantes",
-        operation_description="Obtener lista completa de estudiantes registrados",
+        operation_summary="Crear nueva sesión para curso",
+        operation_description="Crear una nueva sesión para un curso específico. Los estudiantes se registran automáticamente con asistencia en blanco.",
         security=[{'Token': []}],
         responses={
-            200: openapi.Response(
-                description='Lista de estudiantes obtenida exitosamente',
-                schema=GetStudentsClass(many=True)
+            201: openapi.Response(
+                description='Sesión creada exitosamente',
+                examples={
+                    "application/json": {
+                        "message": "Sesión creada con éxito y asistencia registrada en blanco",
+                        "session": {
+                            "id_session": 4,
+                            "id_class": 1,
+                            "num_session": 2,
+                            "date": "2025-05-08T04:15:30Z"
+                        },
+                        "student_count": 15
+                    }
+                }
+            ),
+            400: openapi.Response(
+                description='Error en la solicitud',
+                examples={
+                    "application/json": {
+                        "error": "No hay estudiantes asociados a esta clase. No se puede crear una sesión.",
+                        "status": "EMPTY_CLASS"
+                    }
+                }
             ),
             401: COMMON_RESPONSES[401],
-            403: COMMON_RESPONSES[403]
+            403: COMMON_RESPONSES[403],
+            404: COMMON_RESPONSES[404]
         },
-        tags=["👥 Estudiantes"]
+        tags=["📚 Cursos"]
     )
-    @action(detail=False, methods=['GET'], url_path='getStudents')
-    def get_students(self, request):
-        course = Students.objects.all()
-        serializer = GetStudentsClass(course,many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+    @action(detail=True, methods=['POST'], url_path='session')
+    def create_session(self, request, pk=None):
+        """Crear una nueva sesión para un curso específico"""
+        try:
+            # 1) Tomar el User de Django desde request.user
+            django_user = request.user
+
+            # 2) Traducir ese User de Django a mi modelo AuthUser
+            try:
+                auth_user = AuthUser.objects.get(username=django_user.username)
+            except AuthUser.DoesNotExist:
+                return Response(
+                    {"error": "No se encontró el AuthUser correspondiente a este usuario."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # 3) Verificar roles
+            user_roles = AuthUserRoles.objects.filter(user=django_user).select_related('role')
+            is_volunteer = user_roles.filter(role__name='Volunteers_Profesor').exists()
+            is_admin = user_roles.filter(role__name='Admin').exists()
+            
+            if not (is_volunteer or is_admin):
+                return Response(
+                    {'error': 'No tienes permisos para realizar esta acción.'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # 4) Usar pk del path como course_id
+            course_id = pk
+            if not course_id:
+                return Response(
+                    {'error': 'ID del curso no proporcionado.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # 5) Obtener el curso; si no existe, 404
+            try:
+                course_class = Courses.objects.get(id=course_id)
+            except Courses.DoesNotExist:
+                return Response({'error': 'Curso no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+            # 6) Verificar que al menos haya 1 estudiante en esa clase
+            student_count = Students.objects.filter(studentcourses__id_course=course_Courses.id).count()
+            if student_count == 0:
+                return Response({
+                    'error': 'No hay estudiantes asociados a este curso. No se puede crear una sesión.',
+                    'status': 'EMPTY_CLASS'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # 7) Determinar qué voluntario crea la sesión
+            volunteer = None
+            if is_volunteer:
+                try:
+                    volunteer = Volunteers.objects.get(user=auth_user)
+                except Volunteers.DoesNotExist:
+                    return Response({'error': 'El usuario no es un profesor.'}, status=status.HTTP_403_FORBIDDEN)
+
+                # Confirmar que ese voluntario está asignado al curso
+                if not VolunteerCourses.objects.filter(id_course=course_Courses.id, id_volunteer=volunteer.id).exists():
+                    return Response(
+                        {'error': 'No tienes permiso para crear sesiones en este curso.'},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+            else:
+                # Si es admin, tomar el primer voluntario que esté asignado al curso
+                vc = VolunteerCourses.objects.filter(id_course=course_Courses.id).select_related('id_volunteer').first()
+                if not vc:
+                    return Response(
+                        {'error': 'No se encontraron voluntarios asociados a este curso.'},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+                volunteer = vc.id_volunteer
+
+            # 8) Calcular el próximo num_session
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT MAX(num_session) FROM sessions WHERE id_class = %s",
+                    [course_Courses.id]
+                )
+                result = cursor.fetchone()[0]
+                num_session = (result + 1) if result else 1
+
+            # 9) Crear la sesión y los registros de asistencia
+            with transaction.atomic():
+                session = Session.objects.create(
+                    id_class=course_class,
+                    num_session=num_session,
+                    date=timezone.now(),
+                )
+
+                students = Students.objects.filter(studentcourses__id_course=course_Courses.id)
+                attendance_records = []
+                for student in students:
+                    attendance_records.append(
+                        AttendanceStudent(
+                            id_student=student,
+                            id_volunteer=volunteer,
+                            id_session=session,
+                            created_date=timezone.now(),
+                            attendance=""  
+                        )
+                    )
+                if attendance_records:
+                    AttendanceStudent.objects.bulk_create(attendance_records)
+
+                serializer = SessionSerializer(session)
+                return Response({
+                    'message': 'Sesión creada con éxito y asistencia registrada en blanco.',
+                    'session': serializer.data,
+                    'student_count': student_count
+                }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            print(f"Error en create_session: {str(e)}")
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
-        operation_summary="Obtener estudiantes por clase",
-        operation_description="Obtener lista de estudiantes filtrados por ID de clase",
+        operation_summary="Obtener sesión específica de un curso",
+        operation_description="Obtener información detallada de una sesión específica de un curso (incluido: estudiantes)",
         security=[{'Token': []}],
-        manual_parameters=[
-            openapi.Parameter(
-                'class_id',
-                openapi.IN_QUERY,
-                description="ID de la clase para filtrar estudiantes",
-                type=openapi.TYPE_INTEGER,
-                required=True,
-                example=1
-            )
-        ],
         responses={
             200: openapi.Response(
-                description='Estudiantes de la clase obtenidos exitosamente',
-                schema=GetStudentsClass(many=True)
+                description="Sesión obtenida exitosamente",
+                examples={
+                    "application/json": {
+                        "id_session": 1,
+                        "num_session": 1,
+                        "date": "2024-09-10",
+                        "id_class": 1
+                    }
+                }
             ),
-            400: COMMON_RESPONSES[400],
-            404: COMMON_RESPONSES[404],
+            404: openapi.Response(
+                description="Sesión no encontrada",
+                examples={
+                    "application/json": {
+                        "detail": "Sesión no encontrada para este curso."
+                    }
+                }
+            ),
             500: COMMON_RESPONSES[500]
         },
-        tags=["👥 Estudiantes"]
+        tags=["📚 Cursos"]
     )
-    @action(detail=False, methods=['GET'], url_path='getStudents_id')
-    def get_students_id(self, request):
+    @action(detail=True, methods=['GET'], url_path='session/(?P<session_id>[^/.]+)')
+    def get_session(self, request, pk=None, session_id=None):
+        """Obtener una sesión específica de un curso"""
         try:
-            class_id = request.query_params.get('class_id', None)
+            # pk contiene el course_id, session_id viene del path
+            course_id = pk
+            if not course_id:
+                return Response(
+                    {'error': 'ID del curso no proporcionado.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            if not session_id:
+                return Response(
+                    {'error': 'ID de sesión no proporcionado.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-            if not class_id:
-                return Response({"detail": "El ID de la clase es requerido."}, status=status.HTTP_400_BAD_REQUEST)
+            # Verificar que el curso existe
+            try:
+                course = Courses.objects.get(id=course_id)
+            except Courses.DoesNotExist:
+                return Response(
+                    {'error': 'Curso no encontrado.'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
 
-            # Obtenemos los estudiantes que pertenecen a una clase específica
-            resultados = Students.objects.filter(
-                studentclass__id_class=class_id
-            )
+            # Buscar la sesión por id_session o num_session
+            try:
+                # Intentar primero con id_session
+                session = Session.objects.get(id_session=session_id, id_class=course_id)
+            except Session.DoesNotExist:
+                try:
+                    # Si no funciona, intentar con num_session
+                    session = Session.objects.get(num_session=session_id, id_class=course_id)
+                except Session.DoesNotExist:
+                    return Response(
+                        {'detail': 'Sesión no encontrada para este curso.'},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
 
-            if not resultados.exists():
-                return Response({"detail": "Estudiantes no encontrados."}, status=status.HTTP_404_NOT_FOUND)
-
-            # Serializar los resultados
-            serializer = GetStudentsClass(resultados, many=True)
+            # Serializar y devolver la sesión
+            serializer = SessionSerializer(session)
             return Response(serializer.data, status=status.HTTP_200_OK)
-        
-        except Exception as e:
-            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+        except Exception as e:
+            print(f"Error en get_session: {str(e)}")
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
     @swagger_auto_schema(
         operation_summary="Actualizar estado de asistencia",
         operation_description="Actualizar el estado de asistencia para múltiples estudiantes en una sesión específica",
@@ -517,7 +659,7 @@ class StudentsViewset(ViewSet):
             401: COMMON_RESPONSES[401],
             403: COMMON_RESPONSES[403]
         },
-        tags=["👥 Estudiantes"]
+        tags=["📚 Cursos"]
     )
     @action(detail=False, methods=['PUT'], url_path='update_statuses_students')
     def update_attendance_statuses(self, request):
@@ -571,169 +713,78 @@ class StudentsViewset(ViewSet):
             }
         }, status=status.HTTP_200_OK)
     
+class ClassViewset(ViewSet): 
+    
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
     @swagger_auto_schema(
-        operation_summary="Crear nueva sesión",
-        operation_description="Crear una nueva sesión para una clase. Los estudiantes se registran automáticamente con asistencia en blanco.",
+        operation_summary="Obtener todos los estudiantes",
+        operation_description="Obtener lista completa de estudiantes registrados",
         security=[{'Token': []}],
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            required=['id_class'],
-            properties={
-                'id_class': openapi.Schema(
-                    type=openapi.TYPE_INTEGER,
-                    description='ID de la clase',
-                    example=1
-                )
-            },
-        ),
         responses={
-            201: openapi.Response(
-                description='Sesión creada exitosamente',
-                examples={
-                    "application/json": {
-                        "message": "Sesión creada con éxito y asistencia registrada en blanco",
-                        "session": {
-                            "id_session": 4,
-                            "id_class": 1,
-                            "num_session": 2,
-                            "date": "2025-05-08T04:15:30Z"
-                        },
-                        "student_count": 15
-                    }
-                }
-            ),
-            400: openapi.Response(
-                description='Error en la solicitud',
-                examples={
-                    "application/json": {
-                        "error": "No hay estudiantes asociados a esta clase. No se puede crear una sesión.",
-                        "status": "EMPTY_CLASS"
-                    }
-                }
+            200: openapi.Response(
+                description='Lista de estudiantes obtenida exitosamente',
+                schema=GetStudentsClass(many=True)
             ),
             401: COMMON_RESPONSES[401],
-            403: COMMON_RESPONSES[403],
-            404: COMMON_RESPONSES[404]
+            403: COMMON_RESPONSES[403]
         },
-        tags=["👥 Estudiantes"]
+        tags=["👥 Dummy"]
     )
-    @action(detail=False, methods=['POST'], url_path='create_session')
-    def create_session(self, request, *args, **kwargs):
+    @action(detail=False, methods=['GET'], url_path='getStudents')
+    def get_students(self, request):
+        course = Students.objects.all()
+        serializer = GetStudentsClass(course,many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        operation_summary="Obtener estudiantes por clase",
+        operation_description="Obtener lista de estudiantes filtrados por ID de clase",
+        security=[{'Token': []}],
+        manual_parameters=[
+            openapi.Parameter(
+                'class_id',
+                openapi.IN_QUERY,
+                description="ID de la clase para filtrar estudiantes",
+                type=openapi.TYPE_INTEGER,
+                required=True,
+                example=1
+            )
+        ],
+        responses={
+            200: openapi.Response(
+                description='Estudiantes de la clase obtenidos exitosamente',
+                schema=GetStudentsClass(many=True)
+            ),
+            400: COMMON_RESPONSES[400],
+            404: COMMON_RESPONSES[404],
+            500: COMMON_RESPONSES[500]
+        },
+        tags=["👥 Dummy"]
+    )
+    @action(detail=False, methods=['GET'], url_path='getStudents_id')
+    def get_students_id(self, request):
         try:
-            # 1) Tomo el User de Django desde request.user
-            django_user = request.user
+            class_id = request.query_params.get('class_id', None)
 
-            # 2) Traduzco ese User de Django a mi modelo AuthUser (la tabla real auth_user)
-            try:
-                auth_user = AuthUser.objects.get(username=django_user.username)
-            except AuthUser.DoesNotExist:
-                return Response(
-                    {"error": "No se encontró el AuthUser correspondiente a este usuario."},
-                    status=status.HTTP_404_NOT_FOUND
-                )
-
-            # 3) Ahora consulto roles usando AuthUserRoles; esto funciona porque AuthUserRoles.user apunta al modelo User de Django
-            user_roles = AuthUserRoles.objects.filter(user=django_user).select_related('role')
-            is_volunteer = user_roles.filter(role__name='Volunteers_Profesor').exists()
-            is_admin     = user_roles.filter(role__name='Admin').exists()
-            print(is_volunteer, is_admin, user_roles.values_list('role__name', flat=True))
-            if not (is_volunteer or is_admin):
-                return Response(
-                    {'error': 'No tienes permisos para realizar esta acción.'},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-
-            # 4) Validar que me pasen id_class en el body
-            class_id = request.data.get('id_class')
             if not class_id:
-                return Response(
-                    {'error': 'ID de la clase no proporcionado.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+                return Response({"detail": "El ID de la clase es requerido."}, status=status.HTTP_400_BAD_REQUEST)
 
-            # 5) Obtener la clase; si no existe, 404
-            try:
-                course_class = Class.objects.get(id=class_id)
-            except Class.DoesNotExist:
-                return Response({'error': 'Clase no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+            # Obtenemos los estudiantes que pertenecen a una clase específica
+            resultados = Students.objects.filter(
+                studentclass__id_class=class_id
+            )
 
-            # 6) Verificar que al menos haya 1 estudiante en esa clase
-            student_count = Students.objects.filter(studentclass__id_class=course_class.id).count()
-            if student_count == 0:
-                return Response({
-                    'error': 'No hay estudiantes asociados a esta clase. No se puede crear una sesión.',
-                    'status': 'EMPTY_CLASS'
-                }, status=status.HTTP_400_BAD_REQUEST)
+            if not resultados.exists():
+                return Response({"detail": "Estudiantes no encontrados."}, status=status.HTTP_404_NOT_FOUND)
 
-            # 7) Determinar qué voluntario crea la sesión:
-            volunteer = None
-            if is_volunteer:
-                # Como Volunteers.user es FK a AuthUser, le paso auth_user
-                try:
-                    volunteer = Volunteers.objects.get(user=auth_user)
-                except Volunteers.DoesNotExist:
-                    return Response({'error': 'El usuario no es un profesor.'}, status=status.HTTP_403_FORBIDDEN)
-
-                # Confirmar que ese voluntario está asignado a la clase
-                if not VolunteerClass.objects.filter(id_class=course_class.id, id_volunteer=volunteer.id).exists():
-                    return Response(
-                        {'error': 'No tienes permiso para crear sesiones en esta clase.'},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
-
-            else:
-                # Si es admin, tomo el primer voluntario que esté asignado a esa clase
-                vc = VolunteerClass.objects.filter(id_class=course_class.id).select_related('id_volunteer').first()
-                if not vc:
-                    return Response(
-                        {'error': 'No se encontraron voluntarios asociados a esta clase.'},
-                        status=status.HTTP_404_NOT_FOUND
-                    )
-                volunteer = vc.id_volunteer
-
-            # 8) Calcular el próximo num_session usando SQL RAW para evitar que ORM lo traduzca mal
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT MAX(num_session) FROM sessions WHERE id_class = %s",
-                    [course_class.id]
-                )
-                result = cursor.fetchone()[0]
-                num_session = (result + 1) if result else 1
-
-            # 9) Crear la sesión y los registros de asistencia dentro de una transacción atómica
-            with transaction.atomic():
-                session = Session.objects.create(
-                    id_class=course_class,
-                    num_session=num_session,
-                    date=timezone.now(),
-                )
-
-                students = Students.objects.filter(studentclass__id_class=course_class.id)
-                attendance_records = []
-                for student in students:
-                    attendance_records.append(
-                        AttendanceStudent(
-                            id_student=student,
-                            id_volunteer=volunteer,
-                            id_session=session,
-                            created_date=timezone.now(),
-                            attendance=""  
-                        )
-                    )
-                if attendance_records:
-                    AttendanceStudent.objects.bulk_create(attendance_records)
-
-                serializer = SessionSerializer(session)
-                return Response({
-                    'message': 'Sesión creada con éxito y asistencia registrada en blanco.',
-                    'session': serializer.data,
-                    'student_count': student_count
-                }, status=status.HTTP_201_CREATED)
-
+            # Serializar los resultados
+            serializer = GetStudentsClass(resultados, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        
         except Exception as e:
-            # Si ocurre algún error inesperado, devuelvo 400 con el mensaje
-            print(f"Error en create_session: {str(e)}")
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @swagger_auto_schema(
         operation_summary="Obtener estudiantes por sesión y clase",
@@ -779,7 +830,7 @@ class StudentsViewset(ViewSet):
             404: COMMON_RESPONSES[404],
             500: COMMON_RESPONSES[500]
         },
-        tags=["👥 Estudiantes"]
+        tags=["👥 Dummy"]
     )
     @action(detail=False, methods=['GET'], url_path='getStudents_by_session_class')
     def get_students_by_session_class(self, request):
@@ -822,7 +873,7 @@ class StudentsViewset(ViewSet):
             return Response({"detail": "Estudiantes no encontrados."}, status=status.HTTP_404_NOT_FOUND)
 
         # Obtener la información del curso
-        course = Class.objects.get(id=class_id)
+        course = Courses.objects.get(id=class_id)
 
         # Crear la lista de estudiantes con los campos específicos
         student_list = []
@@ -855,85 +906,7 @@ class StudentsViewset(ViewSet):
         }
         
         return Response(response_data, status=status.HTTP_200_OK)
-
-    @swagger_auto_schema(
-        operation_summary="Obtener sesiones por clase",
-        operation_description="Obtener lista de sesiones filtradas por ID de clase",
-        security=[{'Token': []}],
-        manual_parameters=[
-            openapi.Parameter(
-                'class_id',
-                openapi.IN_QUERY,
-                description="ID de la clase para filtrar sesiones",
-                type=openapi.TYPE_INTEGER,
-                required=True,
-                example=1
-            )
-        ],
-        responses={
-            200: openapi.Response(
-                description="Lista de sesiones obtenida exitosamente",
-                examples={
-                    "application/json": {
-                        "sessions": [
-                            {"id_session": 1, "num_session": 1, "date": "2024-09-10"},
-                            {"id_session": 2, "num_session": 2, "date": "2024-09-11"}
-                        ]
-                    }
-                }
-            ),
-            400: openapi.Response(
-                description="Solicitud incorrecta, class_id es requerido",
-                examples={
-                    "application/json": {
-                        "detail": "El ID de la clase es requerido."
-                    }
-                }
-            ),
-            404: openapi.Response(
-                description="No encontrado, no se encontraron sesiones para el class_id dado",
-                examples={
-                    "application/json": {
-                        "detail": "No se encontraron sesiones para la clase especificada."
-                    }
-                }
-            ),
-            500: COMMON_RESPONSES[500]
-        },
-        tags=["👥 Estudiantes"]
-    )
-    @action(detail=False, methods=['GET'], url_path='get_sessions_class')
-    def get_sessions_class(self, request):
-        try:
-            class_id = request.query_params.get('class_id', None)
-
-            if not class_id:
-                return Response({"detail": "El ID de la clase es requerido."}, status=status.HTTP_400_BAD_REQUEST)
-
-            # CORREGIDO: Usar el nombre correcto del campo
-            sessions = Session.objects.filter(id_class=class_id).values('id_session', 'num_session', 'date')
-
-            if not sessions:
-                return Response({"detail": "No se encontraron sesiones para la clase especificada."}, status=status.HTTP_404_NOT_FOUND)
-
-            # Convertir el QuerySet a una lista de diccionarios con la estructura deseada
-            session_list = [
-                {
-                    "id_session": session['id_session'],
-                    "num_session": session['num_session'],
-                    "date": session['date'].strftime('%Y-%m-%d') if session['date'] else None
-                }
-                for session in sessions
-            ]
-
-            return Response({
-                "sessions": session_list
-            }, status=status.HTTP_200_OK)
-
-        except Exception as e:
-            print(f"Error en get_sessions_class: {str(e)}")  # Para debugging
-            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+ 
 class SupportViewset(ViewSet):
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
@@ -970,12 +943,12 @@ class SupportViewset(ViewSet):
         teacher_name = f"{volunteer.name} {volunteer.last_name}"  # Asumiendo que tienes first_name y last_name en Volunteers
 
         # Obtener los cursos que dicta el voluntario (usando VolunteerClass como tabla intermedia)
-        volunteer_classes = VolunteerClass.objects.filter(id_volunteer=volunteer.id)
+        volunteer_classes = VolunteerCourses.objects.filter(id_volunteer=volunteer.id)
         
         # Obtener los nombres de los cursos relacionados con el voluntario
         if volunteer_classes.exists():
             course_ids = volunteer_classes.values_list('id_class', flat=True)
-            courses = Class.objects.filter(id__in=course_ids)
+            courses = Courses.objects.filter(id__in=course_ids)
             course_list = ', '.join([course.name for course in courses])
         else:
             course_list = 'Sin cursos asignados'
