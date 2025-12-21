@@ -53,11 +53,11 @@ class StudentDetailsSerializer(serializers.ModelSerializer):
         # Ya no necesita hacer consulta, usa los datos prefetch
         return [
             {
-                "class_id": sc.id_class.id,
-                "course_name": sc.id_class.name,
-                "category": sc.id_class.category,
+                "class_id": sc.id_course.id,
+                "course_name": sc.id_course.name,
+                "category": sc.id_course.category,
             }
-            for sc in obj.studentclass_set.all()  # Usa los datos ya cargados
+            for sc in obj.course_enrollments.all()  # Usa los datos ya cargados
         ]
     
     def get_birth_info(self, obj):
@@ -102,6 +102,6 @@ class StudentCourseInfoSerializer(serializers.ModelSerializer):
     def get_courses_info(self, obj):
 
         return CourseInfoSerializer(
-            [sc.id_class for sc in obj.studentclass_set.all()], 
+            [sc.id_course for sc in obj.course_enrollments.all()], 
             many=True
         ).data

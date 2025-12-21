@@ -55,7 +55,7 @@ class UserViewSet(ViewSet):
             },
         ),
         responses={200: "Login exitoso", 400: COMMON_RESPONSES[400], 403: COMMON_RESPONSES[403], 404: COMMON_RESPONSES[404]},
-        tags=["👤 Usuario"]
+        tags=["🔐 Autenticación"]
     )
     @action(detail=False, methods=['POST'], permission_classes=[])
     def login(self, request):
@@ -113,7 +113,7 @@ class UserViewSet(ViewSet):
             },
         ),
         responses={201: "Usuario creado", 400: COMMON_RESPONSES[400], 500: COMMON_RESPONSES[500]},
-        tags=["👤 Usuario"]
+        tags=["🔐 Autenticación"]
     )
     @action(detail=False, methods=['POST'], permission_classes=[])
     def register(self, request):
@@ -134,7 +134,7 @@ class UserViewSet(ViewSet):
     @swagger_auto_schema(
         operation_summary="Perfil del usuario",
         responses={200: UserSerializer, 401: COMMON_RESPONSES[401], 403: COMMON_RESPONSES[403]},
-        tags=["👤 Usuario"]
+        tags=["🔐 Autenticación"]
     )
     @action(detail=False, methods=['GET'])
     def profile(self, request):
@@ -147,7 +147,7 @@ class UserViewSet(ViewSet):
             openapi.Parameter('id_user', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
         ],
         responses={200: UserDataSerializer(many=True), 400: COMMON_RESPONSES[400], 404: COMMON_RESPONSES[404], 500: COMMON_RESPONSES[500]},
-        tags=["👤 Usuario"]
+        tags=["🔐 Autenticación"]
     )
     def list(self, request):
         id_user = request.query_params.get('id_user')  # Utiliza query_params para GET requests
@@ -312,20 +312,20 @@ class CoursesViewSet(ViewSet):
 
             if is_coordinator:
                 # Si el usuario es coordinador, retornar todos los cursos
-                courses = Class.objects.all()
+                courses = Courses.objects.all()
             else:
                 # Si el usuario no es coordinador, retornar solo los cursos asociados
                 # Obtener el ID del voluntario asociado al usuario
                 volunteer = Volunteers.objects.get(user_id=user_id)
 
                 # Filtrar cursos basados en el ID del voluntario
-                courses = Class.objects.filter(
+                courses = Courses.objects.filter(
                     volunteerclass__id_volunteer=volunteer.id
                 ).distinct()  # Asegúrate de no obtener duplicados
 
         except Volunteers.DoesNotExist:
             # Si el usuario no es un voluntario, no devolver cursos
-            courses = Class.objects.none()
+            courses = Courses.objects.none()
             print("No volunteer found for this user.")
         except Exception as e:
             # Manejar cualquier otra excepción
@@ -448,7 +448,7 @@ class CoursesViewSet(ViewSet):
                 return Response({'error': 'Curso no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
 
             # 6) Verificar que al menos haya 1 estudiante en esa clase
-            student_count = Students.objects.filter(studentcourses__id_course=course_class.id).count()
+            student_count = Students.objects.filter(studentcourses__id_course=course_Courses.id).count()
             if student_count == 0:
                 return Response({
                     'error': 'No hay estudiantes asociados a este curso. No se puede crear una sesión.',
@@ -464,14 +464,14 @@ class CoursesViewSet(ViewSet):
                     return Response({'error': 'El usuario no es un profesor.'}, status=status.HTTP_403_FORBIDDEN)
 
                 # Confirmar que ese voluntario está asignado al curso
-                if not VolunteerCourses.objects.filter(id_course=course_class.id, id_volunteer=volunteer.id).exists():
+                if not VolunteerCourses.objects.filter(id_course=course_Courses.id, id_volunteer=volunteer.id).exists():
                     return Response(
                         {'error': 'No tienes permiso para crear sesiones en este curso.'},
                         status=status.HTTP_403_FORBIDDEN
                     )
             else:
                 # Si es admin, tomar el primer voluntario que esté asignado al curso
-                vc = VolunteerCourses.objects.filter(id_course=course_class.id).select_related('id_volunteer').first()
+                vc = VolunteerCourses.objects.filter(id_course=course_Courses.id).select_related('id_volunteer').first()
                 if not vc:
                     return Response(
                         {'error': 'No se encontraron voluntarios asociados a este curso.'},
@@ -483,7 +483,7 @@ class CoursesViewSet(ViewSet):
             with connection.cursor() as cursor:
                 cursor.execute(
                     "SELECT MAX(num_session) FROM sessions WHERE id_class = %s",
-                    [course_class.id]
+                    [course_Courses.id]
                 )
                 result = cursor.fetchone()[0]
                 num_session = (result + 1) if result else 1
@@ -496,7 +496,7 @@ class CoursesViewSet(ViewSet):
                     date=timezone.now(),
                 )
 
-                students = Students.objects.filter(studentcourses__id_course=course_class.id)
+                students = Students.objects.filter(studentcourses__id_course=course_Courses.id)
                 attendance_records = []
                 for student in students:
                     attendance_records.append(
@@ -873,7 +873,7 @@ class ClassViewset(ViewSet):
             return Response({"detail": "Estudiantes no encontrados."}, status=status.HTTP_404_NOT_FOUND)
 
         # Obtener la información del curso
-        course = Class.objects.get(id=class_id)
+        course = Courses.objects.get(id=class_id)
 
         # Crear la lista de estudiantes con los campos específicos
         student_list = []
@@ -943,12 +943,12 @@ class SupportViewset(ViewSet):
         teacher_name = f"{volunteer.name} {volunteer.last_name}"  # Asumiendo que tienes first_name y last_name en Volunteers
 
         # Obtener los cursos que dicta el voluntario (usando VolunteerClass como tabla intermedia)
-        volunteer_classes = VolunteerClass.objects.filter(id_volunteer=volunteer.id)
+        volunteer_classes = VolunteerCourses.objects.filter(id_volunteer=volunteer.id)
         
         # Obtener los nombres de los cursos relacionados con el voluntario
         if volunteer_classes.exists():
             course_ids = volunteer_classes.values_list('id_class', flat=True)
-            courses = Class.objects.filter(id__in=course_ids)
+            courses = Courses.objects.filter(id__in=course_ids)
             course_list = ', '.join([course.name for course in courses])
         else:
             course_list = 'Sin cursos asignados'

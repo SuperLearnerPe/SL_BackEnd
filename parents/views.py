@@ -13,7 +13,7 @@ class ParentsViewSet(viewsets.ViewSet):
     @swagger_auto_schema(
         operation_description="Obtener lista de todos los padres",
         responses={200: ParentDetailsSerializer(many=True), 500: "Error interno"},
-        tags=['👨‍👩‍👧‍👦 Gestión de Padres']
+        tags=['👨‍👩‍👧‍👦 Padres']
     )
     def list(self, request): 
         parents = Parents.objects.all().order_by('-id') 
@@ -24,7 +24,7 @@ class ParentsViewSet(viewsets.ViewSet):
         operation_description="Crear un nuevo padre",
         request_body=ParentSerializer,
         responses={201: ParentDetailsSerializer, 400: "Datos inválidos"},
-        tags=['👨‍👩‍👧‍👦 Gestión de Padres']
+        tags=['👨‍👩‍👧‍👦 Padres']
     )
     def create(self, request):
         serializer = ParentSerializer(data=request.data)
@@ -38,7 +38,7 @@ class ParentsViewSet(viewsets.ViewSet):
             openapi.Parameter('parent_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
         ],
         responses={200: ParentDetailsSerializer, 400: "Parámetro requerido", 404: "No encontrado"},
-        tags=['👨‍👩‍👧‍👦 Gestión de Padres']
+        tags=['👨‍👩‍👧‍👦 Padres']
     )
     def retrieve(self, request):
         parent_id = request.query_params.get("parent_id")
@@ -61,7 +61,7 @@ class ParentsViewSet(viewsets.ViewSet):
         ],
         request_body=ParentSerializer,
         responses={200: ParentDetailsSerializer, 400: "Datos inválidos", 404: "No encontrado"},
-        tags=['👨‍👩‍👧‍👦 Gestión de Padres']
+        tags=['👨‍👩‍👧‍👦 Padres']
     )
     def update(self, request):
         parent_id = request.query_params.get("parent_id")
@@ -85,7 +85,7 @@ class ParentsViewSet(viewsets.ViewSet):
             openapi.Parameter('parent_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
         ],
         responses={200: "Estado cambiado", 400: "Parámetro requerido", 404: "No encontrado"},
-        tags=['👨‍👩‍👧‍👦 Gestión de Padres']
+        tags=['👨‍👩‍👧‍👦 Padres']
     )
     @action(detail=False, methods=["PUT"], url_path="toggle-status")
     def toggle_parent_status(self, request):
