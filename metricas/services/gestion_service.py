@@ -461,7 +461,7 @@ class GestionService:
                     'edad': GestionService._calcular_edad(estudiante.birthdate),
                     'ultima_asistencia': ultima_asistencia_fecha,
                     'dias_inactividad': dias_inactividad,
-                    'clases': [sc.id_class.name for sc in estudiante.studentclass_set.all()]
+                    'clases': [sc.id_course.name for sc in estudiante.course_enrollments.all()]
                 })
         
         return {

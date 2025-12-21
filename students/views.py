@@ -6,6 +6,7 @@ from api.models import Parents, BirthStudents
 from api.models import Students, Courses, StudentCourses
 from .serializers import StudentSerializer, StudentDetailsSerializer, StudentPartialUpdateSerializer,StudentCourseInfoSerializer
 from django.db.models import Prefetch
+from django.db import transaction
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
@@ -14,12 +15,12 @@ class StudentsViewSet(viewsets.ViewSet):
     @swagger_auto_schema(
         operation_description="Obtener lista de todos los estudiantes",
         responses={200: StudentDetailsSerializer(many=True), 500: "Error interno"},
-        tags=['📚 Gestión de Estudiantes']
+        tags=['🎓 Estudiantes']
     )
-    @action(detail=False, methods=["GET"], url_path="get")
-    def list_students(self, request):
+    # @action(detail=False, methods=["GET"], url_path="get")
+    def list(self, request):
         students = Students.objects.all().order_by('-id').select_related('parent').prefetch_related(
-            'studentclass_set__id_class',  
+            'course_enrollments__id_course',  
             Prefetch('birthstudents_set', queryset=BirthStudents.objects.all(), to_attr='birth_prefetched')
         )
         
@@ -45,10 +46,10 @@ class StudentsViewSet(viewsets.ViewSet):
             }
         ),
         responses={201: "Estudiante creado", 400: "Datos inválidos"},
-        tags=['📚 Gestión de Estudiantes']
+        tags=['🎓 Estudiantes']
     )
-    @action(detail=False, methods=["POST"], url_path="create")
-    def create_student(self, request):
+    # @action(detail=False, methods=["POST"], url_path="create")
+    def create(self, request):
         parent_dni = request.data.get("parent_dni")
         if not parent_dni:
             return Response(
@@ -101,10 +102,10 @@ class StudentsViewSet(viewsets.ViewSet):
             openapi.Parameter('student_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
         ],
         responses={200: StudentDetailsSerializer(), 400: "Parámetro requerido", 404: "No encontrado"},
-        tags=['📚 Gestión de Estudiantes']
+        tags=['🎓 Estudiantes']
     )
-    @action(detail=False, methods=["GET"], url_path="get-id")
-    def retrieve_student(self, request):
+    # @action(detail=False, methods=["GET"], url_path="get-id")
+    def retrieve(self, request):
         student_id = request.query_params.get("student_id")
         if not student_id:
             return Response(
@@ -113,7 +114,7 @@ class StudentsViewSet(viewsets.ViewSet):
             )
         try:
             student = Students.objects.filter(pk=student_id).select_related('parent').prefetch_related(
-                'studentclass_set__id_class',  
+                'course_enrollments__id_course',  
                 Prefetch('birthstudents_set', queryset=BirthStudents.objects.all(), to_attr='birth_prefetched')
             ).first()
             
@@ -126,7 +127,7 @@ class StudentsViewSet(viewsets.ViewSet):
             raise NotFound(detail="Estudiante no encontrado.", code=404)
 
     @swagger_auto_schema(
-        operation_description="Actualizar información básica de un estudiante",
+        operation_description="Actualizar información básica de un estudiante (parcial)",
         manual_parameters=[
             openapi.Parameter('student_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
         ],
@@ -135,14 +136,15 @@ class StudentsViewSet(viewsets.ViewSet):
             properties={
                 'name': openapi.Schema(type=openapi.TYPE_STRING),
                 'last_name': openapi.Schema(type=openapi.TYPE_STRING),
-                'gender': openapi.Schema(type=openapi.TYPE_STRING)
+                'gender': openapi.Schema(type=openapi.TYPE_STRING),
+                'status': openapi.Schema(type=openapi.TYPE_INTEGER, description="0=Inactivo, 1=Activo")
             }
         ),
         responses={200: "Estudiante actualizado", 400: "Datos inválidos", 404: "No encontrado"},
-        tags=['📚 Gestión de Estudiantes']
+        tags=['🎓 Estudiantes']
     )
-    @action(detail=False, methods=["PUT"], url_path="update")
-    def update_student_info(self, request):
+    # @action(detail=False, methods=["PATCH"], url_path="update")
+    def partial_update(self, request):
         student_id = request.query_params.get("student_id")
         if not student_id:
             return Response(
@@ -168,137 +170,65 @@ class StudentsViewSet(viewsets.ViewSet):
             status=status.HTTP_200_OK
         )
 
-    @swagger_auto_schema(
-        operation_description="Activar/Desactivar un estudiante",
-        manual_parameters=[
-            openapi.Parameter('student_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
-        ],
-        responses={200: "Estado cambiado", 400: "Parámetro requerido", 404: "No encontrado"},
-        tags=['📚 Gestión de Estudiantes']
-    )
-    @action(detail=False, methods=["PUT"], url_path="toggle-status")
-    def toggle_student_status(self, request):
-        student_id = request.query_params.get("student_id")
-        if not student_id:
-            return Response(
-                {"detail": "El parámetro 'student_id' es obligatorio."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        try:
-            student = Students.objects.get(pk=student_id)
-        except Students.DoesNotExist:
-            raise NotFound(detail="Estudiante no encontrado.", code=404)
+    def _assign_courses_logic(self, student, course_ids):
+        """Lógica interna para asignar cursos a un estudiante"""
+        # Obtener cursos existentes
+        existing_courses = Courses.objects.filter(id__in=course_ids)
+        existing_course_ids = set(existing_courses.values_list('id', flat=True))
+        not_found_ids = [cid for cid in course_ids if cid not in existing_course_ids]
 
-        if student.status == 1:
-            student.status = 0
-            message = "Estudiante desactivado."
-        else:
-            student.status = 1
-            message = "Estudiante activado."
+        # Verificar cursos ya asignados
+        already_assigned = StudentCourses.objects.filter(
+            id_student=student,
+            id_course_id__in=existing_course_ids
+        ).select_related('id_course')
         
-        student.save()
+        already_assigned_ids = set(sc.id_course.id for sc in already_assigned)
         
-        return Response({"detail": message}, status=status.HTTP_200_OK)
+        # Cursos a asignar (existen y no están asignados)
+        courses_to_assign = existing_courses.exclude(id__in=already_assigned_ids)
 
-    @swagger_auto_schema(
-        operation_description="Asignar cursos a un estudiante",
-        manual_parameters=[
-            openapi.Parameter('student_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
-        ],
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                'class_id': openapi.Schema(
-                    type=openapi.TYPE_ARRAY,
-                    items=openapi.Schema(type=openapi.TYPE_INTEGER),
-                    description="Lista de IDs de cursos a asignar"
-                )
-            }
-        ),
-        responses={200: "Cursos asignados", 400: "Datos inválidos", 404: "No encontrado"},
-        tags=['📚 Gestión de Estudiantes']
-    )
-    @action(detail=False, methods=["POST"], url_path="assign-courses")
-    def assign_courses(self, request):
-        student_id = request.query_params.get("student_id")
-        if not student_id:
-            return Response(
-                {"detail": "El parámetro 'student_id' es obligatorio."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        try:
-            student = Students.objects.get(pk=student_id)
-        except Students.DoesNotExist:
-            raise NotFound(detail="Estudiante no encontrado.", code=404)
-
-        class_id = request.data.get('class_id', [])
-        if not isinstance(class_id, list):
-            return Response(
-                {"detail": "class_id debe ser una lista de IDs de cursos."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
+        # Asignar cursos en una transacción atómica
         assigned_courses = []
-        for course_id in class_id:
-            try:
-                course = Class.objects.get(pk=course_id)
-                StudentClass.objects.get_or_create(id_student=student, id_class=course)
-                assigned_courses.append(course.name)
-            except Class.DoesNotExist:
-                return Response({"detail": f"Curso con ID {course_id} no encontrado."}, status=404)
-
-        return Response(
-            {
-                "message": "Cursos asignados con éxito",
-                "assigned_courses": assigned_courses
-            },
-            status=status.HTTP_200_OK
-        )
-
-    @swagger_auto_schema(
-        operation_description="Remover cursos de un estudiante",
-        manual_parameters=[
-            openapi.Parameter('student_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
-        ],
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                'class_id': openapi.Schema(
-                    type=openapi.TYPE_ARRAY,
-                    items=openapi.Schema(type=openapi.TYPE_INTEGER),
-                    description="Lista de IDs de cursos a remover"
-                )
-            }
-        ),
-        responses={200: "Cursos removidos", 400: "Datos inválidos", 404: "No encontrado"},
-        tags=['📚 Gestión de Estudiantes']
-    )
-    @action(detail=False, methods=["POST"], url_path="remove-courses")
-    def remove_courses(self, request):
-        student_id = request.query_params.get("student_id")
-        if not student_id:
+        try:
+            with transaction.atomic():
+                for course in courses_to_assign:
+                    StudentCourses.objects.create(
+                        id_student=student,
+                        id_course=course
+                    )
+                    assigned_courses.append({
+                        'id': course.id,
+                        'name': course.name
+                    })
+        except Exception as e:
             return Response(
-                {"detail": "El parámetro 'student_id' es obligatorio."},
-                status=status.HTTP_400_BAD_REQUEST
+                {"detail": f"Error al asignar cursos: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-        try:
-            student = Students.objects.get(pk=student_id)
-        except Students.DoesNotExist:
-            raise NotFound(detail="Estudiante no encontrado.", code=404)
+        # Preparar respuesta
+        response_data = {
+            'message': f"Se procesaron {len(course_ids)} curso(s) para el estudiante {student.name} {student.last_name}.",
+            'assigned': assigned_courses,
+            'already_assigned': [
+                {'id': sc.id_course.id, 'name': sc.id_course.name}
+                for sc in already_assigned
+            ],
+            'not_found': not_found_ids
+        }
 
-        class_id = request.data.get('class_id', [])
-        if not isinstance(class_id, list):
-            return Response({"detail": "class_id debe ser una lista de IDs de cursos."}, status=400)
+        return Response(response_data, status=status.HTTP_200_OK)
 
+    def _remove_courses_logic(self, student, course_ids):
+        """Lógica interna para remover cursos de un estudiante"""
         removed_courses = []
-        for course_id in class_id:
-            StudentClass.objects.filter(id_student=student, id_class=course_id).delete()
+        for course_id in course_ids:
+            StudentCourses.objects.filter(id_student=student, id_course_id=course_id).delete()
             try:
-                course = Class.objects.get(pk=course_id)
-                removed_courses.append(course.name)
-            except Class.DoesNotExist:
+                course = Courses.objects.get(pk=course_id)
+                removed_courses.append({'id': course.id, 'name': course.name})
+            except Courses.DoesNotExist:
                 pass
 
         return Response(
@@ -310,98 +240,114 @@ class StudentsViewSet(viewsets.ViewSet):
         )
 
     @swagger_auto_schema(
-        operation_description="Mover estudiante de unos cursos a otros",
+        method='post',
+        operation_description="Asignar cursos a un estudiante",
+        manual_parameters=[
+            openapi.Parameter('id', openapi.IN_PATH, type=openapi.TYPE_INTEGER, required=True, description="ID del estudiante")
+        ],
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
+            required=['course_ids'],
             properties={
-                'student_id': openapi.Schema(type=openapi.TYPE_INTEGER),
-                'old_class_id': openapi.Schema(
+                'course_ids': openapi.Schema(
                     type=openapi.TYPE_ARRAY,
-                    items=openapi.Schema(type=openapi.TYPE_INTEGER)
-                ),
-                'new_class_id': openapi.Schema(
-                    type=openapi.TYPE_ARRAY,
-                    items=openapi.Schema(type=openapi.TYPE_INTEGER)
+                    items=openapi.Schema(type=openapi.TYPE_INTEGER),
+                    description="Lista de IDs de cursos a asignar"
                 )
             }
         ),
-        responses={200: "Cursos movidos", 400: "Datos inválidos", 404: "No encontrado"},
-        tags=['📚 Gestión de Estudiantes']
+        responses={
+            200: openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'message': openapi.Schema(type=openapi.TYPE_STRING),
+                    'assigned': openapi.Schema(
+                        type=openapi.TYPE_ARRAY,
+                        items=openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'name': openapi.Schema(type=openapi.TYPE_STRING)
+                            }
+                        )
+                    ),
+                    'already_assigned': openapi.Schema(
+                        type=openapi.TYPE_ARRAY,
+                        items=openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'name': openapi.Schema(type=openapi.TYPE_STRING)
+                            }
+                        )
+                    ),
+                    'not_found': openapi.Schema(
+                        type=openapi.TYPE_ARRAY,
+                        items=openapi.Schema(type=openapi.TYPE_INTEGER)
+                    )
+                }
+            ),
+            400: "Datos inválidos",
+            404: "Estudiante no encontrado"
+        },
+        tags=['🎓 Estudiantes']
     )
-    @action(detail=False, methods=["POST"], url_path="move-courses")
-    def move_courses(self, request):
-        student_id = request.data.get('student_id')
-        if not student_id:
-            return Response({"detail": "student_id es requerido"}, status=400)
-        try:
-            student = Students.objects.get(pk=student_id)
-        except Students.DoesNotExist:
-            raise NotFound(detail="Estudiante no encontrado.", code=404)
-
-        old_class_id = request.data.get('old_class_id')
-        new_class_id = request.data.get('new_class_id')
-
-        if not isinstance(old_class_id, list) or not isinstance(new_class_id, list):
-            return Response({"detail": "old_class_id y new_class_id deben ser listas"}, status=400)
-
-        removed_courses = []
-        for course_id in old_class_id:
-            StudentClass.objects.filter(id_student=student, id_class=course_id).delete()
-            try:
-                course = Class.objects.get(pk=course_id)
-                removed_courses.append(course.name)
-            except Class.DoesNotExist:
-                pass
-
-        assigned_courses = []
-        for course_id in new_class_id:
-            try:
-                course = Class.objects.get(pk=course_id)
-                StudentClass.objects.get_or_create(id_student=student, id_class=course)
-                assigned_courses.append(course.name)
-            except Class.DoesNotExist:
-                pass
-
-        return Response(
-            {
-                "message": f"El estudiante {student.name} ha sido actualizado. Cursos removidos y asignados correctamente.",
-                "removed_courses": removed_courses,
-                "assigned_courses": assigned_courses
-            },
-            status=status.HTTP_200_OK
-        )
-    
     @swagger_auto_schema(
-        operation_description="Obtener información de cursos de todos los estudiantes",
-        responses={200: StudentCourseInfoSerializer(many=True), 500: "Error interno"},
-        tags=['📚 Gestión de Estudiantes']
-    )
-    @action(detail=False, methods=["GET"], url_path="all-students-courses-info")
-    def get_all_students_courses_info(self, request):
-        students = Students.objects.all().prefetch_related(
-            'studentclass_set__id_class'
-        ).order_by('-id')
-        
-        serializer = StudentCourseInfoSerializer(students, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-    
-    @swagger_auto_schema(
-        operation_description="Obtener información de cursos de un estudiante específico",
+        method='delete',
+        operation_description="Remover cursos de un estudiante",
         manual_parameters=[
-            openapi.Parameter('student_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
+            openapi.Parameter('id', openapi.IN_PATH, type=openapi.TYPE_INTEGER, required=True, description="ID del estudiante")
         ],
-        responses={200: StudentCourseInfoSerializer(), 400: "Parámetro requerido", 404: "No encontrado"},
-        tags=['📚 Gestión de Estudiantes']
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['course_ids'],
+            properties={
+                'course_ids': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(type=openapi.TYPE_INTEGER),
+                    description="Lista de IDs de cursos a remover"
+                )
+            }
+        ),
+        responses={200: "Cursos removidos", 400: "Datos inválidos", 404: "No encontrado"},
+        tags=['🎓 Estudiantes']
     )
-    @action(detail=False, methods=["GET"], url_path="student-courses-info")
-    def get_student_courses_info(self, request):
-        student_id = request.query_params.get("student_id")
-        if not student_id:
-            return Response({"detail": "student_id es requerido"}, status=400)
+    @action(detail=True, methods=["POST", "DELETE"], url_path="courses")
+    def manage_courses(self, request, pk=None):
+        """
+        Gestiona los cursos de un estudiante.
+        POST: Asigna cursos a un estudiante.
+        DELETE: Remueve cursos de un estudiante.
+        """
+        # Validar estudiante
         try:
-            student = Students.objects.get(pk=student_id)
+            student = Students.objects.get(pk=pk)
         except Students.DoesNotExist:
             raise NotFound(detail="Estudiante no encontrado.", code=404)
 
-        serializer = StudentCourseInfoSerializer(student)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        # Validar course_ids
+        course_ids = request.data.get('course_ids', [])
+        if not course_ids:
+            return Response(
+                {"detail": "Debe proporcionar al menos un ID de curso en 'course_ids'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not isinstance(course_ids, list):
+            return Response(
+                {"detail": "'course_ids' debe ser una lista de IDs."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Validar que los IDs sean enteros (solo para POST)
+        if request.method == "POST" and not all(isinstance(id, int) for id in course_ids):
+            return Response(
+                {"detail": "Todos los IDs de cursos deben ser enteros."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Ejecutar la lógica correspondiente según el método
+        if request.method == "POST":
+            return self._assign_courses_logic(student, course_ids)
+        elif request.method == "DELETE":
+            return self._remove_courses_logic(student, course_ids)

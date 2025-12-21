@@ -237,14 +237,15 @@ class Parents(models.Model):
 
 
 class StudentCourses(models.Model):
-    id = models.BigAutoField(primary_key=True)
-    id_class = models.ForeignKey(Courses, models.CASCADE, db_column='id_course')
+    id_course = models.ForeignKey(Courses, models.CASCADE, db_column='id_course', related_name='student_enrollments', primary_key=True)
     id_student = models.ForeignKey(
-        'Students', models.CASCADE, db_column='id_student')
+        'Students', models.CASCADE, db_column='id_student', related_name='course_enrollments')
+    created_at = models.DateTimeField(blank=True, null=True)
 
     class Meta:
-        managed = True
+        managed = False
         db_table = 'student_courses'
+        unique_together = (('id_course', 'id_student'),)
 
 
 class Students(models.Model):
