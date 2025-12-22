@@ -34,21 +34,17 @@ class ParentsViewSet(viewsets.ViewSet):
 
     @swagger_auto_schema(
         operation_description="Obtener padre por ID",
-        manual_parameters=[
-            openapi.Parameter('parent_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
-        ],
         responses={200: ParentDetailsSerializer, 400: "Parámetro requerido", 404: "No encontrado"},
         tags=['👨‍👩‍👧‍👦 Padres']
     )
-    def retrieve(self, request):
-        parent_id = request.query_params.get("parent_id")
-        if not parent_id:
+    def retrieve(self, request, pk=None):
+        if not pk:
             return Response(
                 {"detail": "El parámetro 'parent_id' es obligatorio."},
                 status=status.HTTP_400_BAD_REQUEST
             )
         try:
-            parent = Parents.objects.get(pk=parent_id)
+            parent = Parents.objects.get(pk=pk)
         except Parents.DoesNotExist:
             raise NotFound(detail="Parent not found.", code=404)
         serializer = ParentDetailsSerializer(parent)
@@ -56,22 +52,18 @@ class ParentsViewSet(viewsets.ViewSet):
 
     @swagger_auto_schema(
         operation_description="Actualizar información de un padre",
-        manual_parameters=[
-            openapi.Parameter('parent_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
-        ],
         request_body=ParentSerializer,
         responses={200: ParentDetailsSerializer, 400: "Datos inválidos", 404: "No encontrado"},
         tags=['👨‍👩‍👧‍👦 Padres']
     )
-    def update(self, request):
-        parent_id = request.query_params.get("parent_id")
-        if not parent_id:
+    def update(self, request, pk=None):
+        if not pk:
             return Response(
                 {"detail": "El parámetro 'parent_id' es obligatorio."},
                 status=status.HTTP_400_BAD_REQUEST
             ) 
         try:
-            parent = Parents.objects.get(pk=parent_id)
+            parent = Parents.objects.get(pk=pk)
         except Parents.DoesNotExist:
             raise NotFound(detail="Parent not found.", code=404)
         serializer = ParentSerializer(parent, data=request.data)

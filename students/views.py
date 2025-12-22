@@ -11,6 +11,8 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
 class StudentsViewSet(viewsets.ViewSet):
+    queryset = Students.objects.all()
+    lookup_field = 'pk'
     
     @swagger_auto_schema(
         operation_description="Obtener lista de todos los estudiantes",
@@ -98,22 +100,13 @@ class StudentsViewSet(viewsets.ViewSet):
     
     @swagger_auto_schema(
         operation_description="Obtener estudiante por ID",
-        manual_parameters=[
-            openapi.Parameter('student_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
-        ],
-        responses={200: StudentDetailsSerializer(), 400: "Parámetro requerido", 404: "No encontrado"},
+        responses={200: StudentDetailsSerializer(), 404: "No encontrado"},
         tags=['🎓 Estudiantes']
     )
     # @action(detail=False, methods=["GET"], url_path="get-id")
-    def retrieve(self, request):
-        student_id = request.query_params.get("student_id")
-        if not student_id:
-            return Response(
-                {"detail": "Debe enviar el parámetro student_id en la URL."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+    def retrieve(self, request, pk=None):
         try:
-            student = Students.objects.filter(pk=student_id).select_related('parent').prefetch_related(
+            student = Students.objects.filter(pk=pk).select_related('parent').prefetch_related(
                 'course_enrollments__id_course',  
                 Prefetch('birthstudents_set', queryset=BirthStudents.objects.all(), to_attr='birth_prefetched')
             ).first()
@@ -128,9 +121,6 @@ class StudentsViewSet(viewsets.ViewSet):
 
     @swagger_auto_schema(
         operation_description="Actualizar información básica de un estudiante (parcial)",
-        manual_parameters=[
-            openapi.Parameter('student_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, required=True)
-        ],
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
@@ -144,15 +134,9 @@ class StudentsViewSet(viewsets.ViewSet):
         tags=['🎓 Estudiantes']
     )
     # @action(detail=False, methods=["PATCH"], url_path="update")
-    def partial_update(self, request):
-        student_id = request.query_params.get("student_id")
-        if not student_id:
-            return Response(
-                {"detail": "El parámetro 'student_id' es obligatorio."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+    def partial_update(self, request, pk=None):
         try:
-            student = Students.objects.get(pk=student_id)
+            student = Students.objects.get(pk=pk)
         except Students.DoesNotExist:
             raise NotFound(detail="Estudiante no encontrado.", code=404)
 
