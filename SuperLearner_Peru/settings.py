@@ -16,6 +16,7 @@ DEBUG = env.bool('DEBUG', default=False)
 
 ALLOWED_HOSTS = [
     'backend-superlearner-1083661745884.us-central1.run.app',
+    'web-2sibnj9siq61.up-de-fra1-k8s-1.apps.run-on-seenode.com',
     'localhost',
     '127.0.0.1',
     '0.0.0.0'
