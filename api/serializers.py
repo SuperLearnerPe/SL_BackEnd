@@ -43,10 +43,10 @@ class AttendanceUpdateRequestSerializer(serializers.Serializer):
     
     attendances = AttendanceItemSerializer(many=True, help_text="Lista de asistencias a actualizar")
     num_session = serializers.IntegerField(help_text="Número de sesión")
-    id_class = serializers.IntegerField(help_text="ID de la clase")
+    id_course = serializers.IntegerField(help_text="ID del curso")
 
 class SessionCreateRequestSerializer(serializers.Serializer):
-    id_class = serializers.IntegerField(help_text="ID de la clase")
+    id_course = serializers.IntegerField(help_text="ID del curso")
 
 class StudentAttendanceResponseSerializer(serializers.Serializer):
     id = serializers.IntegerField(help_text="ID del estudiante")
@@ -199,7 +199,7 @@ class AttendanceStatusUpdateSerializer(serializers.ModelSerializer):
 class SessionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Session
-        fields = ['id_session', 'id_class','num_session', 'date']
+        fields = ['id_session', 'id_course','num_session', 'date']
         
 class StudentWithStatusSerializer(serializers.ModelSerializer):
     status = serializers.SerializerMethodField()
