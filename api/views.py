@@ -59,29 +59,46 @@ class UserViewSet(ViewSet):
     )
     @action(detail=False, methods=['POST'], permission_classes=[])
     def login(self, request):
+        email = request.data.get("email", "").lower().strip()
+        password = request.data.get("password")
+
+        # Log del intento de login
+        print(f"[LOGIN ATTEMPT] Email: {email}")
+
+        # Verify that both fields are present
+        if not email:
+            print(f"[LOGIN FAILED] Email is required")
+            return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not password:
+            print(f"[LOGIN FAILED] Password is required for email: {email}")
+            return Response({"error": "Password is required"}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            email = request.data.get("email", "").lower().strip()
-            password = request.data.get("password")
-
-            # Verify that both fields are present
-            if not email:
-                return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
-            
-            if not password:
-                return Response({"error": "Password is required"}, status=status.HTTP_400_BAD_REQUEST)
-
             # Try to get the user by email
-            user = get_object_or_404(User, email=email)
+            user = User.objects.get(email=email)
+            print(f"[LOGIN] User found: {user.username} (ID: {user.id})")
+        except User.DoesNotExist:
+            print(f"[LOGIN FAILED] User not found with email: {email}")
+            return Response({"error": "Invalid email or password"}, status=status.HTTP_401_UNAUTHORIZED)
 
-            # Verify the password
-            if not user.check_password(password):
-                return Response({"error": "Invalid password"}, status=status.HTTP_400_BAD_REQUEST)
+        # Verify the password
+        if not user.check_password(password):
+            print(f"[LOGIN FAILED] Invalid password for user: {email}")
+            return Response({"error": "Invalid email or password"}, status=status.HTTP_401_UNAUTHORIZED)
 
-            # Check if the user is active in the Volunteers table
-            volunteer = get_object_or_404(Volunteers, user_id=user.id)
+        # Check if the user is active in the Volunteers table
+        try:
+            volunteer = Volunteers.objects.get(user_id=user.id)
             if volunteer.status != 1:
+                print(f"[LOGIN FAILED] Inactive volunteer account for user: {email}")
                 return Response({"error": "This account is inactive."}, status=status.HTTP_403_FORBIDDEN)
+            print(f"[LOGIN] Volunteer found: {volunteer.name} {volunteer.last_name}")
+        except Volunteers.DoesNotExist:
+            print(f"[LOGIN FAILED] User {email} is not registered as a volunteer")
+            return Response({"error": "User is not registered as a volunteer."}, status=status.HTTP_403_FORBIDDEN)
 
+        try:
             # Generate or retrieve the token
             Token.objects.filter(user=user).delete()  # Optionally delete old tokens
             token, created = Token.objects.get_or_create(user=user)
@@ -89,18 +106,17 @@ class UserViewSet(ViewSet):
             # Serialize the user
             serializer = UserSerializer(instance=user)
 
+            print(f"[LOGIN SUCCESS] User {email} logged in successfully")
+            
             # Respond with the token and user data
             return Response({
                 "token": token.key,
                 "user": serializer.data
             }, status=status.HTTP_200_OK)
 
-        except User.DoesNotExist:
-            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
-
         except Exception as e:
-            print(f"Unexpected error: {str(e)}")  # For debugging
-            return Response({"error": f"An unexpected error occurred: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            print(f"[LOGIN ERROR] Unexpected error for user {email}: {str(e)}")
+            return Response({"error": "An unexpected error occurred. Please try again."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @swagger_auto_schema(
         operation_summary="Registro de usuario",
