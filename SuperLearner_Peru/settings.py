@@ -113,6 +113,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "https://backend-superlearner-1083661745884.us-central1.run.app",
     "https://front-as-sl-1083661745884.southamerica-west1.run.app",
+    "https://eopalomi.github.io",
 ]
 
 CORS_URLS_REGEX = r'^/(api|swagger|redoc|volunteers|students|parents|metricas)/.*$'
@@ -223,3 +224,49 @@ REST_FRAMEWORK = {
 # HTTPS/SSL Configuration for production
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 USE_X_FORWARDED_HOST = True
+
+# ----------- LOGGING CONFIGURATION (Solo en desarrollo) -----------
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '[{levelname}] {asctime} {module}: {message}',
+            'style': '{',
+        },
+        'sql': {
+            'format': '\n[SQL] {message}\n',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+        'sql_console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'sql',
+        },
+    },
+    'loggers': {
+        # Logger para ver TODAS las queries SQL (solo en DEBUG=True)
+        'django.db.backends': {
+            'handlers': ['sql_console'],
+            'level': 'DEBUG' if DEBUG else 'WARNING',
+            'propagate': False,
+        },
+        # Logger general de Django
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        # Logger para la aplicación
+        'api': {
+            'handlers': ['console'],
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'propagate': False,
+        },
+    },
+}
