@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, date
 from django.db.models import Count, Q
-from api.models import AttendanceStudent, Session, Students, Class
+from api.models import AttendanceStudent, Session, Students, Courses
 
 class GestionService:
     """Servicio para cálculo de métricas de gestión"""
@@ -25,10 +25,10 @@ class GestionService:
         sesiones_query = Session.objects.filter(date__date=fecha)
         
         if clase_id:
-            sesiones_query = sesiones_query.filter(id_class=clase_id)
+            sesiones_query = sesiones_query.filter(id_course=clase_id)
         
         if not sesiones_query.exists():
-            clase_nombre = "Todas las clases" if not clase_id else Class.objects.get(id=clase_id).name
+            clase_nombre = "Todas las clases" if not clase_id else Courses.objects.get(id=clase_id).name
             return {
                 'fecha': fecha,
                 'clase': clase_nombre,
@@ -39,14 +39,14 @@ class GestionService:
         # Si no se especifica clase, usar la primera sesión encontrada
         if not clase_id and sesiones_query.exists():
             sesion = sesiones_query.first()
-            clase_id = sesion.id_class.id
-            clase_nombre = sesion.id_class.name
+            clase_id = sesion.id_course.id
+            clase_nombre = sesion.id_course.name
         else:
-            clase_nombre = Class.objects.get(id=clase_id).name
+            clase_nombre = Courses.objects.get(id=clase_id).name
         
         # Obtener la asistencia para esas sesiones
         asistencias = AttendanceStudent.objects.filter(
-            id_session__in=sesiones_query.filter(id_class=clase_id)
+            id_session__in=sesiones_query.filter(id_course=clase_id)
         ).select_related('id_student')
         
         alumnos = []
@@ -88,7 +88,7 @@ class GestionService:
         )
         
         if clase_id:
-            sesiones_query = sesiones_query.filter(id_class=clase_id)
+            sesiones_query = sesiones_query.filter(id_course=clase_id)
             
         # Si no hay sesiones en la fecha, retornar resultado vacío
         if not sesiones_query.exists():
@@ -175,7 +175,7 @@ class GestionService:
         )
         
         if clase_id:
-            sesiones_query = sesiones_query.filter(id_class=clase_id)
+            sesiones_query = sesiones_query.filter(id_course=clase_id)
             
         # Si no hay sesiones en el mes, retornar resultado vacío
         if not sesiones_query.exists():

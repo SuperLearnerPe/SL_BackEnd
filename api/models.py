@@ -273,6 +273,8 @@ class Session(models.Model):
     id_session = models.BigAutoField(primary_key=True)
     id_course = models.ForeignKey(
         Courses, on_delete=models.CASCADE, db_column='id_course')
+    id_volunteer = models.ForeignKey(
+        'Volunteers', on_delete=models.SET_NULL, db_column='id_volunteer', null=True, blank=True)
     date = models.DateTimeField(null=True, blank=True)
     num_session = models.IntegerField(null=True, blank=True)
 

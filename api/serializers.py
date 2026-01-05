@@ -170,7 +170,7 @@ class CourseSerializer(serializers.ModelSerializer):
         
         # Validar que el nombre sea único por día
         if 'name' in data and 'day' in data:
-            existing_course = Class.objects.filter(
+            existing_course = Courses.objects.filter(
                 name=data['name'], 
                 day=data['day']
             ).exclude(id=self.instance.id if self.instance else None)
@@ -199,7 +199,7 @@ class AttendanceStatusUpdateSerializer(serializers.ModelSerializer):
 class SessionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Session
-        fields = ['id_session', 'id_course','num_session', 'date']
+        fields = ['id_session', 'id_course', 'id_volunteer', 'num_session', 'date']
         
 class StudentWithStatusSerializer(serializers.ModelSerializer):
     status = serializers.SerializerMethodField()

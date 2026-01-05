@@ -254,7 +254,7 @@ class CoursesViewSet(ViewSet):
             return Response({"detail": "El ID del curso es requerido."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            course = get_object_or_404(Class, id=pk)
+            course = get_object_or_404(Courses, id=pk)
             serializer = CourseSerializer(course, data=request.data, partial=True)
             if serializer.is_valid():
                 course = serializer.save()
@@ -274,7 +274,7 @@ class CoursesViewSet(ViewSet):
             return Response({"detail": "El ID del curso es requerido."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            course = get_object_or_404(Class, id=pk)
+            course = get_object_or_404(Courses, id=pk)
             course_name = course.name
             course.delete()
             return Response({"detail": f"Curso '{course_name}' eliminado exitosamente."}, status=status.HTTP_200_OK)
@@ -450,7 +450,15 @@ class CoursesViewSet(ViewSet):
 
             # 7) Determinar qué voluntario crea la sesión
             volunteer = None
-            if is_volunteer:
+            
+            # Primero verificar si se proporcionó un volunteer_id en el request
+            volunteer_id = request.data.get('volunteer_id')
+            if volunteer_id:
+                try:
+                    volunteer = Volunteers.objects.get(id=volunteer_id, status=1)
+                except Volunteers.DoesNotExist:
+                    return Response({'error': 'El voluntario especificado no existe o no está activo.'}, status=status.HTTP_400_BAD_REQUEST)
+            elif is_volunteer:
                 try:
                     volunteer = Volunteers.objects.get(user=auth_user)
                 except Volunteers.DoesNotExist:
@@ -463,16 +471,43 @@ class CoursesViewSet(ViewSet):
                         status=status.HTTP_403_FORBIDDEN
                     )
             else:
-                # Si es admin, tomar el primer voluntario que esté asignado al curso
+                # Si es admin, tomar el primer voluntario que esté asignado al curso (si existe)
+                # Ahora permitimos crear sesiones sin voluntarios
                 vc = VolunteerCourses.objects.filter(id_course=course.id).select_related('id_volunteer').first()
-                if not vc:
+                if vc:
+                    volunteer = vc.id_volunteer
+                # Si no hay voluntarios, volunteer quedará como None y se asignará después
+
+            # 8) Obtener fecha y volunteer_id del request
+            session_date = request.data.get('date')
+            volunteer_id = request.data.get('volunteer_id')  # Obtener volunteer_id del frontend
+            
+            if session_date:
+                try:
+                    # Intentar parsear la fecha proporcionada
+                    from datetime import datetime
+                    session_date = datetime.fromisoformat(session_date.replace('Z', '+00:00'))
+                except (ValueError, AttributeError):
+                    # Si hay error en el formato, usar fecha actual
+                    session_date = timezone.now()
+            else:
+                session_date = timezone.now()
+
+            # Si se proporciona volunteer_id, verificar que exista
+            # Los voluntarios son libres, no están atados a ningún curso
+            volunteer_instance = None
+            if volunteer_id:
+                try:
+                    volunteer_instance = Volunteers.objects.get(id=volunteer_id)
+                except Volunteers.DoesNotExist:
                     return Response(
-                        {'error': 'No se encontraron voluntarios asociados a este curso.'},
+                        {'error': 'El voluntario seleccionado no existe.'},
                         status=status.HTTP_404_NOT_FOUND
                     )
-                volunteer = vc.id_volunteer
+            elif volunteer:  # Si no se envió volunteer_id pero ya había uno asignado
+                volunteer_instance = volunteer
 
-            # 8) Calcular el próximo num_session
+            # 9) Calcular el próximo num_session
             with connection.cursor() as cursor:
                 cursor.execute(
                     "SELECT MAX(num_session) FROM sessions WHERE id_course = %s",
@@ -481,34 +516,36 @@ class CoursesViewSet(ViewSet):
                 result = cursor.fetchone()[0]
                 num_session = (result + 1) if result else 1
 
-            # 9) Crear la sesión y los registros de asistencia
+            # 10) Crear la sesión y los registros de asistencia
             with transaction.atomic():
                 session = Session.objects.create(
                     id_course=course,
+                    id_volunteer=volunteer_instance,  # Guardar el voluntario en la sesión
                     num_session=num_session,
-                    date=timezone.now(),
+                    date=session_date,
                 )
 
                 students = Students.objects.filter(course_enrollments__id_course=course.id)
-                attendance_records = []
-                for student in students:
-                    attendance_records.append(
-                        AttendanceStudent(
-                            id_student=student,
-                            id_volunteer=volunteer,
-                            id_session=session,
-                            created_date=timezone.now(),
-                            attendance=""  
+                # Solo crear registros de asistencia si hay un voluntario asignado
+                if volunteer_instance:
+                    attendance_records = []
+                    for student in students:
+                        attendance_records.append(
+                            AttendanceStudent(
+                                id_student=student,
+                                id_volunteer=volunteer_instance,
+                                id_session=session,
+                                created_date=timezone.now(),
+                                attendance=""  
+                            )
                         )
-                    )
-                if attendance_records:
-                    AttendanceStudent.objects.bulk_create(attendance_records)
+                    if attendance_records:
+                        AttendanceStudent.objects.bulk_create(attendance_records)
 
                 serializer = SessionSerializer(session)
                 return Response({
-                    'message': 'Sesión creada con éxito y asistencia registrada en blanco.',
-                    'session': serializer.data,
-                    # 'student_count': student_count
+                    'message': 'Sesión creada con éxito.' + (' Asistencia registrada en blanco.' if volunteer_instance else ' Los estudiantes se agregarán después.'),
+                    'session': serializer.data
                 }, status=status.HTTP_201_CREATED)
 
         except Exception as e:
@@ -747,7 +784,7 @@ class CoursesViewSet(ViewSet):
                 )
 
         session_number = request.data.get('num_session')
-        class_id = request.data.get('id_course')
+        class_id = request.data.get('id_course') or request.data.get('id_class')
 
         if not session_number or not class_id:
             return Response({'error': 'Session number and class ID are required.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -781,6 +818,124 @@ class CoursesViewSet(ViewSet):
                 '': 'No registrado'
             }
         }, status=status.HTTP_200_OK)
+    
+    @swagger_auto_schema(
+        operation_summary="Agregar estudiante a sesión",
+        operation_description="Agrega un estudiante a una sesión existente creando un registro de asistencia",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['student_id', 'session_id'],
+            properties={
+                'student_id': openapi.Schema(
+                    type=openapi.TYPE_INTEGER,
+                    description="ID del estudiante a agregar",
+                    example=1
+                ),
+                'session_id': openapi.Schema(
+                    type=openapi.TYPE_INTEGER,
+                    description="ID de la sesión",
+                    example=1
+                )
+            }
+        ),
+        responses={
+            201: openapi.Response(
+                description='Estudiante agregado exitosamente',
+                examples={
+                    "application/json": {
+                        "message": "Estudiante agregado a la sesión exitosamente",
+                        "attendance_id": 123
+                    }
+                }
+            ),
+            400: COMMON_RESPONSES[400],
+            404: COMMON_RESPONSES[404],
+            500: COMMON_RESPONSES[500]
+        },
+        tags=["📚 Cursos"]
+    )
+    @action(detail=False, methods=['POST'], url_path='add_student_to_session')
+    def add_student_to_session(self, request):
+        """Agregar un estudiante a una sesión existente"""
+        student_id = request.data.get('student_id')
+        session_id = request.data.get('session_id')
+        
+        if not student_id or not session_id:
+            return Response(
+                {"detail": "student_id y session_id son requeridos."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Verificar que el estudiante existe
+            student = Students.objects.get(id=student_id)
+            
+            # Verificar que la sesión existe
+            session = Session.objects.get(id_session=session_id)
+            
+            # Verificar si el estudiante ya está en la sesión
+            existing_attendance = AttendanceStudent.objects.filter(
+                id_student=student,
+                id_session=session
+            ).first()
+            
+            if existing_attendance:
+                return Response(
+                    {"detail": "El estudiante ya está registrado en esta sesión."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Obtener un voluntario asignado al curso de la sesión
+            course = session.id_course
+            volunteer_course = VolunteerCourses.objects.filter(id_course=course).first()
+            volunteer = volunteer_course.id_volunteer if volunteer_course else None
+            
+            if not volunteer:
+                # Si no hay voluntario, buscar cualquier voluntario activo
+                from api.models import Volunteers
+                volunteer = Volunteers.objects.filter(status=1).first()
+            
+            # Si aún no hay voluntario disponible, devolver error
+            if not volunteer:
+                return Response(
+                    {"detail": "No hay voluntarios disponibles. Por favor, registre un voluntario primero."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Crear el registro de asistencia sin marcar (vacío)
+            attendance = AttendanceStudent.objects.create(
+                id_student=student,
+                id_volunteer=volunteer,
+                id_session=session,
+                created_date=timezone.now(),
+                attendance=""
+            )
+            
+            return Response({
+                "message": "Estudiante agregado a la sesión exitosamente",
+                "attendance_id": attendance.id,
+                "student": {
+                    "id": student.id,
+                    "name": f"{student.name} {student.last_name}",
+                    "birthdate": student.birthdate
+                }
+            }, status=status.HTTP_201_CREATED)
+            
+        except Students.DoesNotExist:
+            return Response(
+                {"detail": "Estudiante no encontrado."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Session.DoesNotExist:
+            return Response(
+                {"detail": "Sesión no encontrada."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {"detail": f"Error al agregar estudiante: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
 class ClassViewset(ViewSet): 
     

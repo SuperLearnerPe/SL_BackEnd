@@ -3,7 +3,7 @@ import pandas as pd
 import io
 from datetime import datetime, date, timedelta
 from django.db.models import Count, Q
-from api.models import AttendanceStudent, Students, Class, Session
+from api.models import AttendanceStudent, Students, Courses, Session
 
 class ExcelService:
     @staticmethod
@@ -69,7 +69,7 @@ class ExcelService:
         df_general.to_excel(writer, sheet_name='Tasa Asistencia General', index=False)
           # 2. TASA DE ASISTENCIA POR CLASE/DÍA
         # Optimización: Una sola consulta para todas las clases
-        clases_con_datos = Class.objects.prefetch_related(
+        clases_con_datos = Courses.objects.prefetch_related(
             'session_set',
             'session_set__attendancestudent_set'
         ).annotate(
@@ -337,10 +337,10 @@ class ExcelService:
                 
                 query_filter = {'id_session__date__date': fecha_obj}
                 if clase_id:
-                    query_filter['id_session__id_class__id'] = clase_id
+                    query_filter['id_session__id_course__id'] = clase_id
                 
                 asistencias_diarias = AttendanceStudent.objects.filter(**query_filter).select_related(
-                    'id_student', 'id_session__id_class'
+                    'id_student', 'id_session__id_course'
                 )
                 
                 datos_diarios = []
@@ -351,7 +351,7 @@ class ExcelService:
                         'Apellido': asistencia.id_student.last_name,
                         'Sexo': asistencia.id_student.gender,
                         'Edad': ExcelService._calcular_edad(asistencia.id_student.birthdate),
-                        'Clase': asistencia.id_session.id_class.name,
+                        'Clase': asistencia.id_session.id_course.name,
                         'Sesión': asistencia.id_session.num_session,
                         'Asistencia': asistencia.attendance or 'No Registrado',
                         'Fecha': fecha_obj
@@ -379,7 +379,7 @@ class ExcelService:
                 'id_session__date__lte': fecha_fin
             }
             if clase_id:
-                query_filter['id_session__id_class__id'] = clase_id
+                query_filter['id_session__id_course__id'] = clase_id
             
             # Obtener estudiantes y calcular estadísticas
             estudiantes_semana = {}
@@ -437,7 +437,7 @@ class ExcelService:
                 'id_session__date__year': anio
             }
             if clase_id:
-                query_filter['id_session__id_class__id'] = clase_id
+                query_filter['id_session__id_course__id'] = clase_id
             
             # Obtener estudiantes y calcular estadísticas
             estudiantes_mes = {}
@@ -652,9 +652,9 @@ class ExcelService:
         
         # 7. RESUMEN POR CLASES
         estudiantes_por_clase = []
-        for clase in Class.objects.all():
+        for clase in Courses.objects.all():
             estudiantes_clase = Students.objects.filter(
-                attendancestudent__id_session__id_class=clase
+                attendancestudent__id_session__id_course=clase
             ).distinct()
             
             estudiantes_por_clase.append({
@@ -663,11 +663,191 @@ class ExcelService:
                 'Día': clase.day,
                 'Hora': f"{clase.start_time} - {clase.end_time}",
                 'Total Estudiantes': estudiantes_clase.count(),
-                'Total Sesiones': Session.objects.filter(id_class=clase).count()
+                'Total Sesiones': Session.objects.filter(id_course=clase).count()
             })
         
         df_clases_est = pd.DataFrame(estudiantes_por_clase)
         df_clases_est.to_excel(writer, sheet_name='Resumen por Clases', index=False)
+        
+        # Cerrar el writer y devolver el buffer
+        writer.close()
+        output.seek(0)
+        
+        return output
+    
+    @staticmethod
+    def generar_excel_entidades(tipo_reporte, fecha_inicio=None, fecha_fin=None):
+        """
+        Genera un archivo Excel con los datos de una entidad específica
+        filtrados opcionalmente por fecha de registro.
+        
+        Args:
+            tipo_reporte (str): Tipo de entidad ('padres', 'estudiantes', 'voluntarios', 'cursos')
+            fecha_inicio (date, optional): Fecha de inicio del filtro. Si es None, no aplica filtro inferior
+            fecha_fin (date, optional): Fecha de fin del filtro. Si es None, no aplica filtro superior
+            
+        Returns:
+            BytesIO: Buffer con el archivo Excel generado
+        """
+        from api.models import Parents, Students, Volunteers, Courses
+        from django.utils import timezone
+        
+        output = io.BytesIO()
+        writer = pd.ExcelWriter(output, engine='xlsxwriter')
+        
+        if tipo_reporte == 'padres':
+            # Obtener padres con filtros opcionales por fecha de registro
+            queryset = Parents.objects.all()
+            
+            if fecha_inicio:
+                queryset = queryset.filter(created_at__date__gte=fecha_inicio)
+            if fecha_fin:
+                queryset = queryset.filter(created_at__date__lte=fecha_fin)
+                
+            padres = queryset.order_by('-created_at')
+            
+            datos = []
+            for padre in padres:
+                datos.append({
+                    'ID': padre.id,
+                    'Nombre': padre.name,
+                    'Apellido': padre.last_name,
+                    'Dirección': padre.address or '',
+                    'Ciudad': padre.city or '',
+                    'País': padre.country or '',
+                    'Nacionalidad': padre.nationality or '',
+                    'Tipo Documento': padre.document_type or '',
+                    'Número Documento': padre.document_id or '',
+                    'Fecha Nacimiento': padre.birthdate if padre.birthdate else '',
+                    'Género': padre.gender or '',
+                    'Teléfono': padre.phone or '',
+                    'Correo Electrónico': padre.email or '',
+                    'Fecha Registro': padre.created_at.strftime('%Y-%m-%d %H:%M:%S') if padre.created_at else ''
+                })
+            
+            df = pd.DataFrame(datos)
+            df.to_excel(writer, sheet_name='Padres', index=False)
+            
+        elif tipo_reporte == 'estudiantes':
+            # Obtener estudiantes con filtros opcionales por fecha de registro
+            queryset = Students.objects.all()
+            
+            if fecha_inicio:
+                queryset = queryset.filter(created_at__date__gte=fecha_inicio)
+            if fecha_fin:
+                queryset = queryset.filter(created_at__date__lte=fecha_fin)
+                
+            estudiantes = queryset.select_related('parent').order_by('-created_at')
+            
+            datos = []
+            for estudiante in estudiantes:
+                edad = ExcelService._calcular_edad(estudiante.birthdate) if estudiante.birthdate else None
+                
+                datos.append({
+                    'ID': estudiante.id,
+                    'Nombre': estudiante.name,
+                    'Apellido': estudiante.last_name,
+                    'Fecha Nacimiento': estudiante.birthdate if estudiante.birthdate else '',
+                    'Edad': edad if edad else '',
+                    'Género': estudiante.gender or '',
+                    'Nacionalidad': estudiante.nationality or '',
+                    'Tipo Documento': estudiante.document_type or '',
+                    'Número Documento': estudiante.document_id or '',
+                    'Estado': 'Activo' if estudiante.status == 1 else 'Inactivo',
+                    'Padre/Madre - Nombre': f"{estudiante.parent.name} {estudiante.parent.last_name}" if estudiante.parent else '',
+                    'Padre/Madre - DNI': estudiante.parent.document_id if estudiante.parent else '',
+                    'Padre/Madre - Teléfono': estudiante.parent.phone if estudiante.parent else '',
+                    'Fecha Registro': estudiante.created_at.strftime('%Y-%m-%d %H:%M:%S') if estudiante.created_at else ''
+                })
+            
+            df = pd.DataFrame(datos)
+            df.to_excel(writer, sheet_name='Estudiantes', index=False)
+            
+        elif tipo_reporte == 'voluntarios':
+            # Obtener voluntarios con filtros opcionales por fecha de registro
+            queryset = Volunteers.objects.all()
+            
+            if fecha_inicio:
+                queryset = queryset.filter(created_at__date__gte=fecha_inicio)
+            if fecha_fin:
+                queryset = queryset.filter(created_at__date__lte=fecha_fin)
+                
+            voluntarios = queryset.select_related('user').order_by('-created_at')
+            
+            datos = []
+            for voluntario in voluntarios:
+                edad = ExcelService._calcular_edad(voluntario.birthdate) if voluntario.birthdate else None
+                
+                # Obtener el rol del voluntario
+                try:
+                    from api.models import AuthUserRoles
+                    user_role = AuthUserRoles.objects.filter(user=voluntario.user).first()
+                    rol = user_role.role.name if user_role and user_role.role else 'Sin rol'
+                except:
+                    rol = 'Sin rol'
+                
+                datos.append({
+                    'ID': voluntario.id,
+                    'Nombre': voluntario.name,
+                    'Apellido': voluntario.last_name,
+                    'Correo Personal': voluntario.personal_email or '',
+                    'Teléfono': voluntario.phone or '',
+                    'Nacionalidad': voluntario.nationality or '',
+                    'Tipo Documento': voluntario.document_type or '',
+                    'Número Documento': voluntario.document_id or '',
+                    'Fecha Nacimiento': voluntario.birthdate if voluntario.birthdate else '',
+                    'Edad': edad if edad else '',
+                    'Género': voluntario.gender or '',
+                    'Estado': 'Activo' if voluntario.status == 1 else 'Inactivo',
+                    'Rol': rol,
+                    'Usuario - Username': voluntario.user.username if voluntario.user else '',
+                    'Usuario - Email': voluntario.user.email if voluntario.user else '',
+                    'Fecha Registro': voluntario.created_at.strftime('%Y-%m-%d %H:%M:%S') if voluntario.created_at else ''
+                })
+            
+            df = pd.DataFrame(datos)
+            df.to_excel(writer, sheet_name='Voluntarios', index=False)
+            
+        elif tipo_reporte == 'cursos':
+            # Obtener cursos con filtros opcionales por fecha de registro
+            queryset = Courses.objects.all()
+            
+            if fecha_inicio:
+                queryset = queryset.filter(created_at__date__gte=fecha_inicio)
+            if fecha_fin:
+                queryset = queryset.filter(created_at__date__lte=fecha_fin)
+                
+            cursos = queryset.order_by('-created_at')
+            
+            datos = []
+            for curso in cursos:
+                # Contar estudiantes inscritos
+                from api.models import StudentCourses
+                total_estudiantes = StudentCourses.objects.filter(id_course=curso).count()
+                
+                # Contar voluntarios asignados
+                from api.models import VolunteerCourses
+                total_voluntarios = VolunteerCourses.objects.filter(id_course=curso).count()
+                
+                # Contar sesiones
+                total_sesiones = Session.objects.filter(id_course=curso).count()
+                
+                datos.append({
+                    'ID': curso.id,
+                    'Categoría': curso.category or '',
+                    'Nombre': curso.name,
+                    'Día': curso.day or '',
+                    'Hora Inicio': curso.start_time if curso.start_time else '',
+                    'Hora Fin': curso.end_time if curso.end_time else '',
+                    'Color': curso.color or '',
+                    'Total Estudiantes': total_estudiantes,
+                    'Total Voluntarios': total_voluntarios,
+                    'Total Sesiones': total_sesiones,
+                    'Fecha Registro': curso.created_at.strftime('%Y-%m-%d %H:%M:%S') if curso.created_at else ''
+                })
+            
+            df = pd.DataFrame(datos)
+            df.to_excel(writer, sheet_name='Cursos', index=False)
         
         # Cerrar el writer y devolver el buffer
         writer.close()
