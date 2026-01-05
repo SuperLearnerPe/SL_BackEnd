@@ -289,7 +289,7 @@ class Volunteers(models.Model):
         unique=True, max_length=255, blank=True, null=True)
     phone = models.CharField(
         unique=True, max_length=255, blank=True, null=True)
-    photo = models.CharField(max_length=255, blank=True, null=True)
+    photo = models.CharField(max_length=255, blank=True, null=True)  # Campo legacy, no usar
     nationality = models.CharField(max_length=255, blank=True, null=True)
     document_type = models.CharField(max_length=255, blank=True, null=True)
     document_id = models.CharField(
@@ -301,6 +301,11 @@ class Volunteers(models.Model):
     updated_at = models.DateTimeField(blank=True, null=True, auto_now=True)
     user = models.ForeignKey(
         AuthUser,  on_delete=models.CASCADE,  blank=True, null=True)
+    
+    # Campos para avatar almacenado en BD
+    avatar = models.BinaryField(null=True, blank=True, db_column='avatar')
+    avatar_content_type = models.CharField(max_length=50, null=True, blank=True, db_column='avatar_content_type')
+    avatar_updated_at = models.DateTimeField(null=True, blank=True, db_column='avatar_updated_at')
 
     class Meta:
         managed = True

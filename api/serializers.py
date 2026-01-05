@@ -225,14 +225,25 @@ class StudentWithStatusSerializer(serializers.ModelSerializer):
         
 class UserDataSerializer(serializers.ModelSerializer):
     email = serializers.SerializerMethodField()  # Campo personalizado para el email
+    avatar_url = serializers.SerializerMethodField()  # URL del avatar
 
     class Meta:
         model = Volunteers
-        fields = ['id', 'name', 'last_name', 'personal_email', 'photo', 'phone', 'user_id', 'email']
+        fields = ['id', 'name', 'last_name', 'personal_email', 'photo', 'phone', 'user_id', 'email', 'avatar_url', 'avatar_updated_at']
 
     def get_email(self, obj):
         # Accede al campo 'user' que es una ForeignKey al modelo auth_user
         return obj.user.email if obj.user else None
+    
+    def get_avatar_url(self, obj):
+        """Generar la URL completa del avatar si existe"""
+        if obj.avatar and obj.id:
+            request = self.context.get('request')
+            if request:
+                from django.urls import reverse
+                path = reverse('volunteers-get-avatar', kwargs={'pk': obj.id})
+                return request.build_absolute_uri(path)
+        return None
     
 class GetStudentsClass(serializers.ModelSerializer):
     attendance = serializers.SerializerMethodField()

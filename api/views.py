@@ -175,7 +175,7 @@ class UserViewSet(ViewSet):
             data_user = Volunteers.objects.filter(user_id=id_user)
             
             if data_user.exists():
-                serializer = UserDataSerializer(data_user, many=True)  # Usa UserDataSerializer aquí
+                serializer = UserDataSerializer(data_user, many=True, context={'request': request})  # Pasar el contexto del request
                 return Response(serializer.data, status=status.HTTP_200_OK)
             else:
                 return Response({"detail": "No se encontraron voluntarios para el ID proporcionado."}, status=status.HTTP_404_NOT_FOUND)

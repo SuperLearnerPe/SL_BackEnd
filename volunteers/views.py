@@ -4,12 +4,11 @@ from rest_framework.viewsets import ViewSet
 from rest_framework.response import Response
 from .serializers import GetVolunteersSerializer,UserAuthSerializer ,VolunteerSerializer
 from rest_framework import status
-# from rest_framework.permissions import IsAuthenticated
-# from rest_framework.authentication import TokenAuthentication
-from rest_framework.decorators import action
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from rest_framework.decorators import action, parser_classes
 from django.contrib.auth.hashers import make_password
 from django.utils import timezone
-# from django.contrib.auth.models import User
+from django.http import HttpResponse
 from api.models import Volunteers ,AuthUser , AuthRole , AuthUserRoles , Courses ,VolunteerCourses
 from django.contrib.auth import get_user_model
 from rest_framework.authtoken.models import Token
@@ -25,8 +24,8 @@ class VolunteersViewSet(ViewSet):
             # Obtener todos los voluntarios
             volunteers = Volunteers.objects.all().order_by("-id")
 
-            # Serializar los voluntarios
-            serializer = GetVolunteersSerializer(volunteers, many=True)
+            # Serializar los voluntarios, pasando el contexto del request para URLs absolutas
+            serializer = GetVolunteersSerializer(volunteers, many=True, context={'request': request})
 
             return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -34,12 +33,27 @@ class VolunteersViewSet(ViewSet):
             print(f"Unexpected error: {str(e)}")
             return Response({"error": "An unexpected error occurred"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
-    @action(detail=False, methods=['POST'], url_path='create_volunteer')
+    @action(detail=False, methods=['POST'], url_path='create_volunteer', parser_classes=[MultiPartParser, FormParser, JSONParser])
     def create_volunteer(self, request):
+        import json
+        
         User = get_user_model()  
+        
+        # Parsear datos JSON si vienen como string (FormData)
         user_data = request.data.get('user')
+        if isinstance(user_data, str):
+            user_data = json.loads(user_data)
+            
         volunteer_data = request.data.get('volunteer')
+        if isinstance(volunteer_data, str):
+            volunteer_data = json.loads(volunteer_data)
+            
         course_ids = request.data.get('course_ids', [])
+        if isinstance(course_ids, str):
+            course_ids = json.loads(course_ids)
+        
+        # Extraer el archivo avatar si viene en el request
+        avatar_file = request.FILES.get('avatar')
 
         if not user_data or not volunteer_data:
             return Response({"error": "Se requiere tanto la información del usuario como la del voluntario."}, status=status.HTTP_400_BAD_REQUEST)
@@ -96,7 +110,6 @@ class VolunteersViewSet(ViewSet):
                 else:
                     errors[field] = messages
             return Response(errors, status=status.HTTP_400_BAD_REQUEST)
-        
 
         user_data['date_joined'] = timezone.now()
         user_data['is_active'] = user_data.get('is_active', True)
@@ -116,6 +129,11 @@ class VolunteersViewSet(ViewSet):
         role_id = volunteer_data.pop('role', None)
 
         volunteer_data['user'] = user.id
+        
+        # Si hay un archivo avatar, agregarlo a los datos del voluntario
+        if avatar_file:
+            volunteer_data['avatar'] = avatar_file
+            
         volunteer_serializer = VolunteerSerializer(data=volunteer_data)
 
         if not volunteer_serializer.is_valid():
@@ -131,6 +149,8 @@ class VolunteersViewSet(ViewSet):
                     errors['phone'] = ["Número de teléfono inválido."]
                 elif field == 'personal_email':
                     errors['personal_email'] = ["Correo personal inválido."]
+                elif field == 'avatar':
+                    errors['avatar'] = messages  # Mantener mensaje de validación de avatar
                 else:
                     errors[field] = messages
             return Response(errors, status=status.HTTP_400_BAD_REQUEST)
@@ -250,14 +270,29 @@ class VolunteersViewSet(ViewSet):
         responses={200: "Voluntario actualizado", 400: "Datos inválidos", 404: "No encontrado"},
         tags=['👥 Voluntarios']
     )
-    @action(detail=False, methods=['PUT'], url_path='update_volunteer')
+    @action(detail=False, methods=['PUT'], url_path='update_volunteer', parser_classes=[MultiPartParser, FormParser, JSONParser])
     def update_volunteer(self, request, pk=None):
+        import json
+        
         # Obtener los datos enviados por el frontend
         volunteer_id = request.data.get('volunteer_id')
         user_id = request.data.get('user_id')
+        
+        # Parsear datos JSON si vienen como string (FormData)
         user_data = request.data.get('user')
+        if isinstance(user_data, str):
+            user_data = json.loads(user_data)
+            
         volunteer_data = request.data.get('volunteer', {})
-        course_ids = request.data.get('course_ids', []) 
+        if isinstance(volunteer_data, str):
+            volunteer_data = json.loads(volunteer_data)
+            
+        course_ids = request.data.get('course_ids', [])
+        if isinstance(course_ids, str):
+            course_ids = json.loads(course_ids)
+        
+        # Extraer el archivo avatar si viene en el request
+        avatar_file = request.FILES.get('avatar')
 
         # Convertir status de booleano a entero si es necesario
         if 'status' in volunteer_data:
@@ -331,6 +366,18 @@ class VolunteersViewSet(ViewSet):
                     role_id = int(raw_role_id)
                 except (ValueError, TypeError):
                     return Response({"error": "El ID del rol debe ser un número entero válido."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Manejar eliminación de avatar
+        remove_avatar = request.data.get('remove_avatar', 'false').lower() == 'true'
+        if remove_avatar:
+            volunteer.avatar = None
+            volunteer.avatar_content_type = None
+            volunteer.avatar_updated_at = None
+            volunteer.save(update_fields=['avatar', 'avatar_content_type', 'avatar_updated_at'])
+
+        # Si hay un archivo avatar, agregarlo a los datos del voluntario
+        if avatar_file:
+            volunteer_data['avatar'] = avatar_file
 
         # Serializar los datos del voluntario para actualizarlos (si hay datos)
         if volunteer_data:
@@ -426,3 +473,31 @@ class VolunteersViewSet(ViewSet):
         volunteer.save()
 
         return Response({"message": "El voluntario ha sido activado correctamente."}, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['GET'], url_path='avatar', permission_classes=[])
+    def get_avatar(self, request, pk=None):
+        """
+        Endpoint para obtener el avatar de un voluntario.
+        GET /volunteers/{id}/avatar
+        No requiere autenticación - es público
+        """
+        try:
+            volunteer = Volunteers.objects.get(pk=pk)
+        except Volunteers.DoesNotExist:
+            return Response({"error": "El voluntario no existe."}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Verificar si el voluntario tiene avatar
+        if not volunteer.avatar:
+            return Response({"error": "El voluntario no tiene avatar."}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Crear la respuesta HTTP con la imagen
+        response = HttpResponse(volunteer.avatar, content_type=volunteer.avatar_content_type)
+        
+        # Agregar headers de cache
+        response['Cache-Control'] = 'private, max-age=86400'  # Cache por 1 día
+        
+        # Agregar Last-Modified si está disponible
+        if volunteer.avatar_updated_at:
+            response['Last-Modified'] = volunteer.avatar_updated_at.strftime('%a, %d %b %Y %H:%M:%S GMT')
+        
+        return response
