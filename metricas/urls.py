@@ -1,11 +1,9 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import MetricasViewSet, ImpactoViewSet, GestionViewSet
+from .views import GestionViewSet
 
 router = DefaultRouter()
-router.register(r'general', MetricasViewSet, basename='metricas-general')
-router.register(r'impacto', ImpactoViewSet, basename='metricas-impacto')
-router.register(r'management', GestionViewSet, basename='metricas-gestion')
+router.register(r'management', GestionViewSet, basename='metricas-management')
 
 urlpatterns = [
     path('', include(router.urls)),
