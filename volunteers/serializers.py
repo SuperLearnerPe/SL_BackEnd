@@ -36,10 +36,10 @@ class GetVolunteersSerializer(serializers.ModelSerializer):
         return None  # Devolver None si no se encuentra usuario
 
     def get_course_ids(self, obj):
-        # Obtener todos los cursos asociados al voluntario desde VolunteerClass
-        volunteer_classes = VolunteerClass.objects.filter(id_volunteer=obj.id)
-        # Extraer los IDs de los cursos de las instancias de VolunteerClass
-        course_ids = volunteer_classes.values_list('id_class', flat=True)
+        # Obtener todos los cursos asociados al voluntario desde VolunteerCourses
+        volunteer_courses = VolunteerCourses.objects.filter(id_volunteer=obj.id)
+        # Extraer los IDs de los cursos de las instancias de VolunteerCourses
+        course_ids = volunteer_courses.values_list('id_course', flat=True)
         return list(course_ids)  # Devolver los IDs de los cursos como una lista
 
     
