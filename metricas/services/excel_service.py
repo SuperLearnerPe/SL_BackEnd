@@ -834,7 +834,6 @@ class ExcelService:
                 
                 datos.append({
                     'ID': curso.id,
-                    'Categoría': curso.category or '',
                     'Nombre': curso.name,
                     'Día': curso.day or '',
                     'Hora Inicio': curso.start_time if curso.start_time else '',

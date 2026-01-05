@@ -191,10 +191,9 @@ class CoursesViewSet(ViewSet):
         operation_summary="Crear nuevo curso",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
-            required=['name', 'category', 'day', 'start_time', 'end_time'],
+            required=['name', 'day', 'start_time', 'end_time'],
             properties={
                 'name': openapi.Schema(type=openapi.TYPE_STRING, example='Matemáticas Básicas'),
-                'category': openapi.Schema(type=openapi.TYPE_STRING, example='Matemáticas'),
                 'day': openapi.Schema(type=openapi.TYPE_STRING, example='Lunes'),
                 'start_time': openapi.Schema(type=openapi.TYPE_STRING, example='09:00:00'),
                 'end_time': openapi.Schema(type=openapi.TYPE_STRING, example='11:00:00'),
@@ -237,7 +236,6 @@ class CoursesViewSet(ViewSet):
             type=openapi.TYPE_OBJECT,
             properties={
                 'name': openapi.Schema(type=openapi.TYPE_STRING, example='Matemáticas Avanzadas'),
-                'category': openapi.Schema(type=openapi.TYPE_STRING, example='Matemáticas'),
                 'day': openapi.Schema(type=openapi.TYPE_STRING, example='Martes'),
                 'start_time': openapi.Schema(type=openapi.TYPE_STRING, example='10:00:00'),
                 'end_time': openapi.Schema(type=openapi.TYPE_STRING, example='12:00:00'),

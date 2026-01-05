@@ -137,7 +137,6 @@ class BirthStudents(models.Model):
 
 class Courses(models.Model):
     id = models.BigAutoField(primary_key=True)
-    category = models.CharField(max_length=255, blank=True, null=True)
     name = models.CharField(max_length=255, blank=True, null=True)
     status = models.IntegerField(blank=True, null=True)
     day = models.CharField(max_length=50, blank=True, null=True)

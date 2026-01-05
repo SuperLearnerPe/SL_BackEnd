@@ -90,7 +90,7 @@ class UserSerializer(serializers.ModelSerializer):
 class GetCourses(serializers.ModelSerializer):
     class Meta:
         model = Courses
-        fields = ["id","category","name","day","start_time","end_time","color","status","created_at","updated_at"]
+        fields = ["id","name","day","start_time","end_time","color","status","created_at","updated_at"]
         
 
         
@@ -136,7 +136,7 @@ class CourseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Courses
         fields = [
-            'id', 'name', 'category', 'day', 'start_time', 'end_time', 
+            'id', 'name', 'day', 'start_time', 'end_time', 
             'color', 'status', 'created_at', 'updated_at', 'duration', 'schedule_info'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']

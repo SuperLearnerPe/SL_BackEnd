@@ -55,7 +55,6 @@ class StudentDetailsSerializer(serializers.ModelSerializer):
             {
                 "class_id": sc.id_course.id,
                 "course_name": sc.id_course.name,
-                "category": sc.id_course.category,
             }
             for sc in obj.course_enrollments.all()  # Usa los datos ya cargados
         ]
