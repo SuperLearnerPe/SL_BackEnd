@@ -78,7 +78,7 @@ class StudentPartialUpdateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Students
-        fields = ['name', 'last_name', 'gender', 'document_id', 'nationality', 'document_type','birthdate' , 'gender' , 'updated_at']
+        fields = ['name', 'last_name', 'gender', 'document_id', 'nationality', 'document_type', 'birthdate', 'status', 'updated_at']
 
 
 class CourseInfoSerializer(serializers.ModelSerializer):

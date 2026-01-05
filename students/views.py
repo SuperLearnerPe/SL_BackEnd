@@ -120,39 +120,216 @@ class StudentsViewSet(viewsets.ViewSet):
             raise NotFound(detail="Estudiante no encontrado.", code=404)
 
     @swagger_auto_schema(
-        operation_description="Actualizar información básica de un estudiante (parcial)",
+        operation_description="Actualizar información completa de un estudiante",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
                 'name': openapi.Schema(type=openapi.TYPE_STRING),
                 'last_name': openapi.Schema(type=openapi.TYPE_STRING),
+                'parent_dni': openapi.Schema(type=openapi.TYPE_STRING, description="DNI del padre/madre"),
                 'gender': openapi.Schema(type=openapi.TYPE_STRING),
+                'nationality': openapi.Schema(type=openapi.TYPE_STRING),
+                'document_id': openapi.Schema(type=openapi.TYPE_STRING),
+                'birthdate': openapi.Schema(type=openapi.TYPE_STRING, format='date'),
+                'birth_info': openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'city': openapi.Schema(type=openapi.TYPE_STRING),
+                        'country': openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                ),
                 'status': openapi.Schema(type=openapi.TYPE_INTEGER, description="0=Inactivo, 1=Activo")
             }
         ),
         responses={200: "Estudiante actualizado", 400: "Datos inválidos", 404: "No encontrado"},
         tags=['🎓 Estudiantes']
     )
-    # @action(detail=False, methods=["PATCH"], url_path="update")
-    def partial_update(self, request, pk=None):
+    def update(self, request, pk=None):
+        """Actualización completa del estudiante (PUT/PATCH)"""
+        print(f"DEBUG: Iniciando actualización del estudiante ID={pk}")
+        print(f"DEBUG: Datos recibidos: {request.data}")
+        
         try:
             student = Students.objects.get(pk=pk)
         except Students.DoesNotExist:
-            raise NotFound(detail="Estudiante no encontrado.", code=404)
+            return Response(
+                {"detail": "Estudiante no encontrado."},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
-        serializer = StudentPartialUpdateSerializer(
-            student,
-            data=request.data,
-            partial=True
-        )
+        try:
+            # Validar document_id si se está actualizando
+            new_document_id = request.data.get('document_id')
+            if new_document_id and new_document_id != student.document_id:
+                # Verificar que no exista otro estudiante con ese DNI
+                if Students.objects.filter(document_id=new_document_id).exclude(pk=pk).exists():
+                    return Response(
+                        {"document_id": ["Ya existe un estudiante con este DNI."]},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                student.document_id = new_document_id
 
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
+            # Validar y actualizar padre si se proporciona parent_dni
+            parent_dni = request.data.get('parent_dni')
+            if parent_dni:
+                try:
+                    parent = Parents.objects.get(document_id=parent_dni)
+                    print(f"DEBUG: Padre encontrado: ID={parent.id}, DNI={parent.document_id}, Nombre={parent.name}")
+                    print(f"DEBUG: Padre anterior del estudiante: {student.parent_id}")
+                    student.parent = parent
+                    print(f"DEBUG: Nuevo padre asignado: {student.parent_id}")
+                except Parents.DoesNotExist:
+                    return Response(
+                        {"parent_dni": ["No existe un padre/madre con este DNI."]},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
 
-        return Response(
-            {"detail": "Información del estudiante actualizada correctamente."},
-            status=status.HTTP_200_OK
-        )
+            # Actualizar campos básicos del estudiante
+            if 'name' in request.data:
+                student.name = request.data.get('name')
+            if 'last_name' in request.data:
+                student.last_name = request.data.get('last_name')
+            if 'gender' in request.data:
+                student.gender = request.data.get('gender')
+            if 'nationality' in request.data:
+                student.nationality = request.data.get('nationality')
+            if 'birthdate' in request.data:
+                student.birthdate = request.data.get('birthdate')
+            if 'status' in request.data:
+                student.status = request.data.get('status')
+            
+            print(f"DEBUG: Antes de guardar - parent_id: {student.parent_id}")
+            student.save()
+            print(f"DEBUG: Después de guardar - parent_id: {student.parent_id}")
+
+            # Actualizar birth_info si se proporciona
+            birth_info = request.data.get('birth_info')
+            if birth_info:
+                birth_student, created = BirthStudents.objects.get_or_create(
+                    id_student=student
+                )
+                if 'city' in birth_info:
+                    birth_student.city = birth_info.get('city')
+                if 'country' in birth_info:
+                    birth_student.country = birth_info.get('country')
+                birth_student.save()
+
+            return Response(
+                {"detail": "Estudiante actualizado correctamente."},
+                status=status.HTTP_200_OK
+            )
+        except Exception as e:
+            return Response(
+                {"detail": f"Error al actualizar el estudiante: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @swagger_auto_schema(
+        operation_description="Actualizar información básica de un estudiante (parcial)",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'name': openapi.Schema(type=openapi.TYPE_STRING),
+                'last_name': openapi.Schema(type=openapi.TYPE_STRING),
+                'parent_dni': openapi.Schema(type=openapi.TYPE_STRING, description="DNI del padre/madre"),
+                'gender': openapi.Schema(type=openapi.TYPE_STRING),
+                'nationality': openapi.Schema(type=openapi.TYPE_STRING),
+                'document_id': openapi.Schema(type=openapi.TYPE_STRING),
+                'birthdate': openapi.Schema(type=openapi.TYPE_STRING, format='date'),
+                'birth_info': openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'city': openapi.Schema(type=openapi.TYPE_STRING),
+                        'country': openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                ),
+                'status': openapi.Schema(type=openapi.TYPE_INTEGER, description="0=Inactivo, 1=Activo")
+            }
+        ),
+        responses={200: "Estudiante actualizado", 400: "Datos inválidos", 404: "No encontrado"},
+        tags=['🎓 Estudiantes']
+    )
+    def partial_update(self, request, pk=None):
+        """Actualización parcial del estudiante (PATCH)"""
+        print(f"DEBUG PARTIAL: Iniciando actualización del estudiante ID={pk}")
+        print(f"DEBUG PARTIAL: Datos recibidos: {request.data}")
+        
+        try:
+            student = Students.objects.get(pk=pk)
+        except Students.DoesNotExist:
+            return Response(
+                {"detail": "Estudiante no encontrado."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        try:
+            # Validar document_id si se está actualizando
+            new_document_id = request.data.get('document_id')
+            if new_document_id and new_document_id != student.document_id:
+                # Verificar que no exista otro estudiante con ese DNI
+                if Students.objects.filter(document_id=new_document_id).exclude(pk=pk).exists():
+                    return Response(
+                        {"document_id": ["Ya existe un estudiante con este DNI."]},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                student.document_id = new_document_id
+
+            # Validar y actualizar padre si se proporciona parent_dni
+            parent_dni = request.data.get('parent_dni')
+            print(f"DEBUG PARTIAL: parent_dni recibido: {parent_dni}")
+            if parent_dni:
+                try:
+                    parent = Parents.objects.get(document_id=parent_dni)
+                    print(f"DEBUG PARTIAL: Padre encontrado: ID={parent.id}, DNI={parent.document_id}, Nombre={parent.name}")
+                    print(f"DEBUG PARTIAL: Padre anterior del estudiante: {student.parent_id}")
+                    student.parent = parent
+                    print(f"DEBUG PARTIAL: Nuevo padre asignado: {student.parent_id}")
+                except Parents.DoesNotExist:
+                    return Response(
+                        {"parent_dni": ["No existe un padre/madre con este DNI."]},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            # Actualizar campos básicos del estudiante
+            if 'name' in request.data:
+                student.name = request.data.get('name')
+            if 'last_name' in request.data:
+                student.last_name = request.data.get('last_name')
+            if 'gender' in request.data:
+                student.gender = request.data.get('gender')
+            if 'nationality' in request.data:
+                student.nationality = request.data.get('nationality')
+            if 'birthdate' in request.data:
+                student.birthdate = request.data.get('birthdate')
+            if 'status' in request.data:
+                student.status = request.data.get('status')
+            
+            print(f"DEBUG PARTIAL: Antes de guardar - parent_id: {student.parent_id}")
+            student.save()
+            print(f"DEBUG PARTIAL: Después de guardar - parent_id: {student.parent_id}")
+
+            # Actualizar birth_info si se proporciona
+            birth_info = request.data.get('birth_info')
+            if birth_info:
+                birth_student, created = BirthStudents.objects.get_or_create(
+                    id_student=student
+                )
+                if 'city' in birth_info:
+                    birth_student.city = birth_info.get('city')
+                if 'country' in birth_info:
+                    birth_student.country = birth_info.get('country')
+                birth_student.save()
+
+            return Response(
+                {"detail": "Estudiante actualizado correctamente."},
+                status=status.HTTP_200_OK
+            )
+        except Exception as e:
+            print(f"DEBUG PARTIAL: Error: {str(e)}")
+            return Response(
+                {"detail": f"Error al actualizar el estudiante: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     def _assign_courses_logic(self, student, course_ids):
         """Lógica interna para asignar cursos a un estudiante"""

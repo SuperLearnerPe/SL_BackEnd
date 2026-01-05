@@ -1,6 +1,6 @@
 from django.db.models import Count, Q
 from datetime import datetime, timedelta
-from api.models import AttendanceStudent, Session, Class
+from api.models import AttendanceStudent, Session, Courses
 
 class ImpactoService:
     """Servicio para cálculo de métricas de impacto"""
@@ -26,8 +26,8 @@ class ImpactoService:
         
         # Filtrar por clase si se especifica
         if clase_id:
-            sessions_query = sessions_query.filter(id_class=clase_id)
-            attendance_query = attendance_query.filter(id_session__id_class=clase_id)
+            sessions_query = sessions_query.filter(id_course=clase_id)
+            attendance_query = attendance_query.filter(id_session__id_course=clase_id)
         
         # Contar sesiones y asistencias con optimización
         total_sesiones = sessions_query.count()
@@ -54,7 +54,7 @@ class ImpactoService:
     @staticmethod
     def calcular_asistencia_por_clase(periodo):
         """Calcula tasas de asistencia por clase"""
-        clases = Class.objects.all()
+        clases = Courses.objects.all()
         resultados = []
         
         for clase in clases:

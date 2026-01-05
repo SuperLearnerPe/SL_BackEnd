@@ -13,6 +13,8 @@ from django.utils import timezone
 from api.models import Volunteers ,AuthUser , AuthRole , AuthUserRoles , Courses ,VolunteerCourses
 from django.contrib.auth import get_user_model
 from rest_framework.authtoken.models import Token
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 
 class VolunteersViewSet(ViewSet):
     logger = logging.getLogger(__name__)
@@ -42,17 +44,70 @@ class VolunteersViewSet(ViewSet):
         if not user_data or not volunteer_data:
             return Response({"error": "Se requiere tanto la información del usuario como la del voluntario."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Validaciones manuales ANTES del serializer para mensajes en español
+        username = user_data.get('username')
+        email = user_data.get('email')
+        document_id = volunteer_data.get('document_id')
+
+        # Validar username único
+        if username and User.objects.filter(username=username).exists():
+            return Response({
+                "username": ["Ya existe un voluntario con este nombre de usuario."]
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validar email único
+        if email and User.objects.filter(email=email).exists():
+            return Response({
+                "email": ["Ya existe un voluntario con este correo electrónico."]
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validar document_id único
+        if document_id and Volunteers.objects.filter(document_id=document_id).exists():
+            return Response({
+                "document_id": ["Ya existe un voluntario con este número de documento."]
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validar campos requeridos
+        if not username:
+            return Response({
+                "username": ["El nombre de usuario es obligatorio."]
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if not email:
+            return Response({
+                "email": ["El correo electrónico es obligatorio."]
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if not user_data.get('password'):
+            return Response({
+                "password": ["La contraseña es obligatoria."]
+            }, status=status.HTTP_400_BAD_REQUEST)
+
         # Validar los datos del usuario
         user_serializer = UserAuthSerializer(data=user_data)
         if not user_serializer.is_valid():
-            return Response(user_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            # Traducir mensajes de error del serializer si los hay
+            errors = {}
+            for field, messages in user_serializer.errors.items():
+                if field == 'username':
+                    errors['username'] = ["Nombre de usuario inválido."]
+                elif field == 'email':
+                    errors['email'] = ["Correo electrónico inválido."]
+                else:
+                    errors[field] = messages
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
         
 
         user_data['date_joined'] = timezone.now()
         user_data['is_active'] = user_data.get('is_active', True)
 
-        # Crear el usuario usando el modelo AuthUser
-        user = User.objects.create_user(**user_data)
+        try:
+            # Crear el usuario usando el modelo AuthUser
+            user = User.objects.create_user(**user_data)
+        except Exception as e:
+            return Response({
+                "error": f"Error al crear el usuario: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         # Crear el token para el nuevo usuario
         token, created = Token.objects.get_or_create(user=user)
@@ -64,17 +119,43 @@ class VolunteersViewSet(ViewSet):
         volunteer_serializer = VolunteerSerializer(data=volunteer_data)
 
         if not volunteer_serializer.is_valid():
-            return Response(volunteer_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            # Si falla la creación del voluntario, eliminar el usuario creado
+            user.delete()
+            
+            # Traducir errores del voluntario
+            errors = {}
+            for field, messages in volunteer_serializer.errors.items():
+                if field == 'document_id':
+                    errors['document_id'] = ["Número de documento inválido."]
+                elif field == 'phone':
+                    errors['phone'] = ["Número de teléfono inválido."]
+                elif field == 'personal_email':
+                    errors['personal_email'] = ["Correo personal inválido."]
+                else:
+                    errors[field] = messages
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
 
-        # Crear el voluntario
-        volunteer = volunteer_serializer.save()
+        try:
+            # Crear el voluntario
+            volunteer = volunteer_serializer.save()
+        except Exception as e:
+            # Si falla, eliminar el usuario creado
+            user.delete()
+            return Response({
+                "error": f"Error al crear el voluntario: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         if role_id:
             try:
                 role = AuthRole.objects.get(id=role_id)
                 AuthUserRoles.objects.create(user=user, role=role)
             except AuthRole.DoesNotExist:
-                return Response({"error": f"Rol con ID {role_id} no existe."}, status=status.HTTP_400_BAD_REQUEST)
+                # Si el rol no existe, eliminar usuario y voluntario
+                volunteer.delete()
+                user.delete()
+                return Response({
+                    "role": [f"El rol con ID {role_id} no existe."]
+                }, status=status.HTTP_400_BAD_REQUEST)
         
         # Serializar de nuevo el usuario ya creado
         user_serializer = UserAuthSerializer(user)
@@ -83,11 +164,13 @@ class VolunteersViewSet(ViewSet):
             valid_courses = []
             for course_id in course_ids:
                 try:
-                    class_instance = Class.objects.get(id=course_id)
-                    VolunteerClass.objects.create(id_class=class_instance, id_volunteer=volunteer)
-                    valid_courses.append(class_instance.name)  # Añadir el nombre del curso a una lista
-                except Class.DoesNotExist:
-                    return Response({"error": f"Curso con ID {course_id} no existe."}, status=status.HTTP_400_BAD_REQUEST)
+                    course_instance = Courses.objects.get(id=course_id)
+                    VolunteerCourses.objects.create(id_course=course_instance, id_volunteer=volunteer)
+                    valid_courses.append(course_instance.name)  # Añadir el nombre del curso a una lista
+                except Courses.DoesNotExist:
+                    return Response({
+                        "course_ids": [f"El curso con ID {course_id} no existe."]
+                    }, status=status.HTTP_400_BAD_REQUEST)
         else:
             valid_courses = None
     
@@ -124,6 +207,49 @@ class VolunteersViewSet(ViewSet):
             'email_status': email_status
         }, status=status.HTTP_201_CREATED)
 
+    @swagger_auto_schema(
+        operation_description="Actualizar información de un voluntario",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'volunteer_id': openapi.Schema(type=openapi.TYPE_INTEGER, description="ID del voluntario"),
+                'user_id': openapi.Schema(type=openapi.TYPE_INTEGER, description="ID del usuario"),
+                'user': openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'username': openapi.Schema(type=openapi.TYPE_STRING),
+                        'email': openapi.Schema(type=openapi.TYPE_STRING),
+                        'first_name': openapi.Schema(type=openapi.TYPE_STRING),
+                        'last_name': openapi.Schema(type=openapi.TYPE_STRING),
+                    }
+                ),
+                'volunteer': openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'name': openapi.Schema(type=openapi.TYPE_STRING),
+                        'last_name': openapi.Schema(type=openapi.TYPE_STRING),
+                        'personal_email': openapi.Schema(type=openapi.TYPE_STRING),
+                        'phone': openapi.Schema(type=openapi.TYPE_STRING),
+                        'nationality': openapi.Schema(type=openapi.TYPE_STRING),
+                        'document_type': openapi.Schema(type=openapi.TYPE_STRING),
+                        'document_id': openapi.Schema(type=openapi.TYPE_STRING),
+                        'birthdate': openapi.Schema(type=openapi.TYPE_STRING, format='date'),
+                        'gender': openapi.Schema(type=openapi.TYPE_STRING),
+                        'status': openapi.Schema(type=openapi.TYPE_INTEGER, description="0=Inactivo, 1=Activo"),
+                        'role': openapi.Schema(type=openapi.TYPE_INTEGER, description="ID del rol"),
+                    }
+                ),
+                'course_ids': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(type=openapi.TYPE_INTEGER),
+                    description="Lista de IDs de cursos"
+                ),
+            },
+            required=['volunteer_id', 'user_id', 'user']
+        ),
+        responses={200: "Voluntario actualizado", 400: "Datos inválidos", 404: "No encontrado"},
+        tags=['👥 Voluntarios']
+    )
     @action(detail=False, methods=['PUT'], url_path='update_volunteer')
     def update_volunteer(self, request, pk=None):
         # Obtener los datos enviados por el frontend
@@ -132,6 +258,11 @@ class VolunteersViewSet(ViewSet):
         user_data = request.data.get('user')
         volunteer_data = request.data.get('volunteer', {})
         course_ids = request.data.get('course_ids', []) 
+
+        # Convertir status de booleano a entero si es necesario
+        if 'status' in volunteer_data:
+            if isinstance(volunteer_data['status'], bool):
+                volunteer_data['status'] = 1 if volunteer_data['status'] else 0 
 
         # Validar que los IDs y los datos estén presentes
         if not volunteer_id or not user_id or not user_data:
@@ -225,14 +356,14 @@ class VolunteersViewSet(ViewSet):
             if course_ids:
                 try:
                     # Limpiar las relaciones existentes
-                    VolunteerClass.objects.filter(id_volunteer=volunteer).delete()
+                    VolunteerCourses.objects.filter(id_volunteer=volunteer).delete()
                     
                     # Crear nuevas relaciones
                     for course_id in course_ids:
                         try:
-                            class_instance = Class.objects.get(id=course_id)
-                            VolunteerClass.objects.create(id_class=class_instance, id_volunteer=volunteer)
-                        except Class.DoesNotExist:
+                            course_instance = Courses.objects.get(id=course_id)
+                            VolunteerCourses.objects.create(id_course=course_instance, id_volunteer=volunteer)
+                        except Courses.DoesNotExist:
                             return Response(
                                 {"error": f"Curso con ID {course_id} no existe."},
                                 status=status.HTTP_400_BAD_REQUEST
@@ -242,7 +373,7 @@ class VolunteersViewSet(ViewSet):
         else:
             # Si es Admin u otro rol distinto de Profesor, se eliminan las relaciones con cursos
             try:
-                VolunteerClass.objects.filter(id_volunteer=volunteer).delete()
+                VolunteerCourses.objects.filter(id_volunteer=volunteer).delete()
             except Exception as e:
                 return Response({"error": f"Error al eliminar las relaciones de curso: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
