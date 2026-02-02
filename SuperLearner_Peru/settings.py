@@ -17,6 +17,7 @@ DEBUG = env.bool('DEBUG', default=False)
 ALLOWED_HOSTS = [
     'backend-superlearner-1083661745884.us-central1.run.app',
     'web-2sibnj9siq61.up-de-fra1-k8s-1.apps.run-on-seenode.com',
+    'web-gh7mql3bbvne.up-de-fra1-k8s-1.apps.run-on-seenode.com',
     'localhost',
     '127.0.0.1',
     '0.0.0.0'
@@ -115,6 +116,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://front-as-sl-1083661745884.southamerica-west1.run.app",
     "https://eopalomi.github.io",
     "https://superlearnerpe.github.io",
+    "https://web-gh7mql3bbvne.up-de-fra1-k8s-1.apps.run-on-seenode.com",
 ]
 
 CORS_URLS_REGEX = r'^/(api|swagger|redoc|volunteers|students|parents|metricas)/.*$'
@@ -155,6 +157,7 @@ CSRF_TRUSTED_ORIGINS = [
     'http://localhost:8080',
     'https://front-as-sl-1083661745884.southamerica-west1.run.app',
     'https://backend-superlearner-1083661745884.us-central1.run.app',
+    'https://web-gh7mql3bbvne.up-de-fra1-k8s-1.apps.run-on-seenode.com',
 ]
 
 # ----------- SECURITY CONFIGURATION -----------
