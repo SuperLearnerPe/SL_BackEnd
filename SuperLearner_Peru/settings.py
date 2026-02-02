@@ -114,6 +114,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://backend-superlearner-1083661745884.us-central1.run.app",
     "https://front-as-sl-1083661745884.southamerica-west1.run.app",
     "https://eopalomi.github.io",
+    "https://superlearnerpe.github.io",
 ]
 
 CORS_URLS_REGEX = r'^/(api|swagger|redoc|volunteers|students|parents|metricas)/.*$'
