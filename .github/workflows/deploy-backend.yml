@@ -1,6 +1,6 @@
 name: Deploy Backend to Droplet
 
-run-name: "Deploy PROD @${{ github.actor }}"
+run-name: Deploy PROD @${{ github.actor }}
 
 on:
   push:
@@ -18,40 +18,40 @@ jobs:
 
     steps:
       - name: Deploy over SSH
-      uses: appleboy/ssh-action@v1.2.0
-      with:
-        host: ${{ secrets.DROPLET_HOST }}
-        username: ${{ secrets.DROPLET_USER }}
-        key: ${{ secrets.DROPLET_SSH_KEY }}
-        port: ${{ secrets.DROPLET_PORT }}
-        script_stop: true
-        command_timeout: 30m
-        script: |
-          set -euo pipefail
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USER }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          port: ${{ secrets.DROPLET_PORT }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -euo pipefail
 
-          APP_DIR="${{ secrets.APP_DIR }}"
-          REPO_URL="https://github.com/SuperLearnerPe/SL_BackEnd.git"
-          BRANCH="main"
+            APP_DIR="${{ secrets.APP_DIR }}"
+            REPO_URL="https://github.com/SuperLearnerPe/SL_BackEnd.git"
+            BRANCH="main"
+            PROJECT_NAME="sl-backend"
 
-          mkdir -p "$APP_DIR"
-          cd "$APP_DIR"
+            mkdir -p "$APP_DIR"
 
-          if [ ! -d .git ]; then
-            git clone "$REPO_URL" .
-          fi
+            if [ ! -d "$APP_DIR/.git" ]; then
+              git clone "$REPO_URL" "$APP_DIR"
+            fi
 
-          git fetch origin "$BRANCH"
-          git checkout "$BRANCH"
-          git reset --hard "origin/$BRANCH"
+            cd "$APP_DIR"
+            git fetch origin "$BRANCH"
+            git checkout "$BRANCH"
+            git reset --hard "origin/$BRANCH"
 
-          # Escribe el .env de producción desde GitHub Secret
-          printf "%s" "${{ secrets.ENV_PROD }}" > .env
-          chmod 600 .env
+            printf "%s" "${{ secrets.ENV_PROD }}" > .env
+            chmod 600 .env
 
-          # Despliegue con Docker Compose
-          # Recomendado: servicio web en compose de producción
-          docker compose -f docker-compose.prod.yml down
-          docker compose -f docker-compose.prod.yml up -d --build
+            docker compose \
+              -p "$PROJECT_NAME" \
+              -f compose.yml \
+              --env-file .env \
+              up -d --build --remove-orphans
 
-          # Limpieza opcional de imágenes antiguas
-          docker image prune -f
+            docker image prune -f
