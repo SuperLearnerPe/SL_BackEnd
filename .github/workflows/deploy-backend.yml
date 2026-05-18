@@ -51,7 +51,12 @@ jobs:
             printf '%s' "$ENV_PROD" > .env
             chmod 600 .env
 
-            docker compose \
+            if ! command -v docker-compose >/dev/null 2>&1; then
+              echo "docker-compose is not available on the server." >&2
+              exit 1
+            fi
+
+            docker-compose \
               -p "$PROJECT_NAME" \
               -f docker-compose.yml \
               --env-file .env \
