@@ -13,3 +13,9 @@ services:
       - "8000:8000"
     environment:
       PORT: ${PORT:-8000}
+    networks:
+      - frame_net
+
+networks:
+  frame_net:
+    external: true
