@@ -1,12 +1,15 @@
 version: '3.8'
 
 services:
-  dev:
+  web:
     build:
       context: .
-      dockerfile: Dockerfile.dev  # Especifica el nuevo Dockerfile
-    volumes:
-      - .:/app
+      dockerfile: Dockerfile
+    command: ./entrypoint.sh
+    env_file:
+      - .env
+    restart: unless-stopped
     ports:
       - "8000:8000"
-    tty: true
+    environment:
+      PORT: ${PORT:-8000}
