@@ -58,7 +58,7 @@ jobs:
 
             docker-compose \
               -p "$PROJECT_NAME" \
-              -f docker-compose.yml \
+              -f "$APP_DIR/docker-compose.yml" \
               --env-file .env \
               up -d --build --remove-orphans
 
